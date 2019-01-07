@@ -23,15 +23,14 @@ impl Future for CheckMailboxTask {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 
         let mut mailbox = self.mailbox.lock().unwrap();
+        let task = futures::task::current();
+        mailbox.set_task(task);
         let msg: u8 = mailbox.message.clone();
         if msg != 0 {
             println!("polled ready");
             Ok(Async::Ready(()))
         } else {
             println!("polled not ready");
-
-            let task = futures::task::current();
-            mailbox.task = Arc::new(Mutex::new(Option::Some(task)));
 
             Ok(Async::NotReady)
         }
@@ -46,6 +45,12 @@ struct Mailbox {
     actor_address: ActorAddress,
     message: u8,
     task: Arc<Mutex<Option<Task>>>
+}
+impl Mailbox {
+    fn set_task(&mut self, task: Task) {
+        let mut guard = self.task.lock().unwrap();
+        *guard = Some(task);
+    }
 }
 
 struct Router {
@@ -91,34 +96,42 @@ fn main() {
     println!("init");
 
     let mut router: Router = Router::new();
-    const actor: TestActor = TestActor { };
+    let actor: TestActor = TestActor { };
     let addr: ActorAddress = router.register(actor);
-    println!("{}", addr);
-    
-
     let mailbox: Arc<Mutex<Mailbox>> = router.get_mailbox(&addr).unwrap();
-    let task: CheckMailboxTask = CheckMailboxTask { mailbox: Arc::clone(&mailbox) };
-
+    let mailbox_clone = Arc::clone(&mailbox);
+    
     thread::spawn(move || {
-        tokio::run(task.and_then(|result| {
-            println!("running and_then closure");
-            futures::future::ok(())
-        }));
+        println!("child thread starts sleeping");
+        sleep(Duration::from_millis(2000));
+        println!("child thread wakes up");
+
+        let mut unwrapped_mailbox = mailbox.lock().unwrap();
+        let mut notified = false;
+        {
+            let wrapped_task: &Arc<Mutex<Option<Task>>> = &unwrapped_mailbox.task;
+            let optional_task: MutexGuard<Option<Task>> = wrapped_task.lock().unwrap();
+            if let Option::Some(ref t) = &*optional_task {
+                println!("child thread notifying task");
+                t.notify();
+                notified = true;
+            } else {
+                println!("child thread has no task available");  
+            }
+        }
+        unwrapped_mailbox.message = if notified { 1 } else { 0 };
+
+        println!("child thread starts sleeping again");
+        sleep(Duration::from_millis(2000));
+        println!("child thread wakes up");
     });
 
-    println!("start sleeping");
-    sleep(Duration::from_millis(5000));
-    println!("wake up");
-
-    let wrapped_task: &Arc<Mutex<Option<Task>>> = &mailbox.lock().unwrap().task;
-    let optional_task: MutexGuard<Option<Task>> = wrapped_task.lock().unwrap();
-    if let Option::Some(ref t) = *optional_task {
-        println!("notifying task");
-        t.notify();
-    } else {
-        println!("no task available");  
-    }
-
+    let task: CheckMailboxTask = CheckMailboxTask { mailbox: mailbox_clone };
+    println!("starting tokio");
+    tokio::run(task.and_then(|result| {
+        println!("running and_then closure");
+        futures::future::ok(())
+    }));
 
     println!("done");
 }
