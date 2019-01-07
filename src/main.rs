@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::thread::sleep;
 use std::time::Duration;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
+use std::thread;
 
 struct CheckMailboxTask { mailbox: Arc<Mutex<Mailbox>> }
 impl CheckMailboxTask {
@@ -21,12 +22,17 @@ impl Future for CheckMailboxTask {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 
-        let msg: u8 = self.mailbox.lock().unwrap().message.clone();
+        let mut mailbox = self.mailbox.lock().unwrap();
+        let msg: u8 = mailbox.message.clone();
         if msg != 0 {
             println!("polled ready");
             Ok(Async::Ready(()))
         } else {
             println!("polled not ready");
+
+            let task = futures::task::current();
+            mailbox.task = Arc::new(Mutex::new(Option::Some(task)));
+
             Ok(Async::NotReady)
         }
     }
@@ -91,15 +97,27 @@ fn main() {
     
 
     let mailbox: Arc<Mutex<Mailbox>> = router.get_mailbox(&addr).unwrap();
-    let task: CheckMailboxTask = CheckMailboxTask { mailbox: mailbox };
+    let task: CheckMailboxTask = CheckMailboxTask { mailbox: Arc::clone(&mailbox) };
 
-    tokio::run(task.and_then(|result| {
-        println!("running and_then closure");
-        futures::future::ok(())
-    }));
+    thread::spawn(move || {
+        tokio::run(task.and_then(|result| {
+            println!("running and_then closure");
+            futures::future::ok(())
+        }));
+    });
 
-    sleep(Duration::from_millis(2000));
-    // futures::task::current().notify();
+    println!("start sleeping");
+    sleep(Duration::from_millis(5000));
+    println!("wake up");
+
+    let wrapped_task: &Arc<Mutex<Option<Task>>> = &mailbox.lock().unwrap().task;
+    let optional_task: MutexGuard<Option<Task>> = wrapped_task.lock().unwrap();
+    if let Option::Some(ref t) = *optional_task {
+        println!("notifying task");
+        t.notify();
+    } else {
+        println!("no task available");  
+    }
 
 
     println!("done");
