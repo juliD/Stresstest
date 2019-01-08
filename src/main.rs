@@ -9,6 +9,8 @@ use std::time::Duration;
 use std::sync::Arc;
 use std::sync::{Mutex, MutexGuard};
 use std::thread;
+use std::sync::mpsc::*;
+use std::hash::{Hash, Hasher};
 
 struct CheckMailboxTask { mailbox: Arc<Mutex<Mailbox>> }
 impl CheckMailboxTask {
@@ -22,28 +24,51 @@ impl Future for CheckMailboxTask {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
 
+        println!("poll waits for lock of mailbox");
         let mut mailbox = self.mailbox.lock().unwrap();
+        println!("poll enters lock of mailbox");
         let task = futures::task::current();
         mailbox.set_task(task);
-        let msg: u8 = mailbox.message.clone();
-        if msg != 0 {
-            println!("polled ready");
-            Ok(Async::Ready(()))
-        } else {
-            println!("polled not ready");
-
-            Ok(Async::NotReady)
-        }
+        let message: Result<Message, TryRecvError> = mailbox.receiver.try_recv();
+        let r = match message{
+            Ok(msg) => {
+                println!("polled ready");
+                Ok(Async::Ready(()))
+            }
+            _ => {
+                println!("polled not ready");
+                Ok(Async::NotReady)
+            }
+        };
+        println!("poll leaves lock of mailbox");
+        r
     }
 }
 
-type ActorAddress = u8;
+type Message = String;
+type ActorId = u64;
+
+struct ActorAddress {
+    id: ActorId,
+    sender: Sender<Message>
+}
+impl Hash for ActorAddress {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+impl PartialEq for ActorAddress {
+    fn eq(&self, other: &ActorAddress) -> bool {
+        self.id == other.id
+    }
+}
+impl Eq for ActorAddress {}
 
 trait Actor {}
 
 struct Mailbox {
-    actor_address: ActorAddress,
-    message: u8,
+    actor_id_counter: ActorId,
+    receiver: Receiver<Message>,
     task: Arc<Mutex<Option<Task>>>
 }
 impl Mailbox {
@@ -54,9 +79,9 @@ impl Mailbox {
 }
 
 struct Router {
-    actors: HashMap<ActorAddress, Box<Actor>>,
-    mailboxes: HashMap<ActorAddress,  Arc<Mutex<Mailbox>>>,
-    actor_id_counter: u8
+    actors: HashMap<ActorId, Box<Actor>>,
+    mailboxes: HashMap<ActorId,  Arc<Mutex<Mailbox>>>,
+    actor_id_counter: ActorId
 }
 impl Router {
     fn new() -> Router {
@@ -71,18 +96,19 @@ impl Router {
         self.actor_id_counter += 1;
         self.actors.insert(self.actor_id_counter.clone(), Box::new(actor));
 
+        let (tx, rx) = channel();
         let mailbox = Mailbox {
-            actor_address: self.actor_id_counter.clone(),
-            message: 0,
+            actor_id_counter: self.actor_id_counter.clone(),
+            receiver: rx,
             task: Arc::new(Mutex::new(Option::None))
         };
         self.mailboxes.insert(self.actor_id_counter.clone(), Arc::new(Mutex::new(mailbox)));
 
-        self.actor_id_counter.clone()
+        ActorAddress {id: self.actor_id_counter.clone(), sender: tx}
     }
 
-    fn get_mailbox(&self, address: &ActorAddress) -> Option<Arc<Mutex<Mailbox>>> {
-        match self.mailboxes.get(address) {
+    fn get_mailbox(&self, id: &ActorId) -> Option<Arc<Mutex<Mailbox>>> {
+        match self.mailboxes.get(id) {
             Option::None => Option::None,
             Option::Some(m) => Option::Some(Arc::clone(m))
         }
@@ -98,7 +124,7 @@ fn main() {
     let mut router: Router = Router::new();
     let actor: TestActor = TestActor { };
     let addr: ActorAddress = router.register(actor);
-    let mailbox: Arc<Mutex<Mailbox>> = router.get_mailbox(&addr).unwrap();
+    let mailbox: Arc<Mutex<Mailbox>> = router.get_mailbox(&addr.id).unwrap();
     let mailbox_clone = Arc::clone(&mailbox);
     
     thread::spawn(move || {
@@ -106,11 +132,15 @@ fn main() {
         sleep(Duration::from_millis(2000));
         println!("child thread wakes up");
 
+        println!("child thread waits for lock of mailbox");
         let mut unwrapped_mailbox = mailbox.lock().unwrap();
+        println!("child thread enters lock of mailbox");
         let mut notified = false;
         {
             let wrapped_task: &Arc<Mutex<Option<Task>>> = &unwrapped_mailbox.task;
+            println!("child thread waits for lock of task");
             let optional_task: MutexGuard<Option<Task>> = wrapped_task.lock().unwrap();
+            println!("child thread enters lock of task");
             if let Option::Some(ref t) = &*optional_task {
                 println!("child thread notifying task");
                 t.notify();
@@ -118,12 +148,15 @@ fn main() {
             } else {
                 println!("child thread has no task available");  
             }
+            println!("child thread leaves lock of task");
         }
-        unwrapped_mailbox.message = if notified { 1 } else { 0 };
+        addr.sender.send("testmessage".to_string());
 
         println!("child thread starts sleeping again");
         sleep(Duration::from_millis(2000));
         println!("child thread wakes up");
+
+        println!("child thread leaves lock of mailbox");
     });
 
     let task: CheckMailboxTask = CheckMailboxTask { mailbox: mailbox_clone };
