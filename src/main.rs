@@ -28,35 +28,36 @@ impl PartialEq for ActorAddress {
 }
 impl Eq for ActorAddress {}
 impl ActorAddress {
-    fn send(messae: Message) {
-        // TODO
+    fn send(&self, message: Message) {
+        println!("sending message");
+        self.sender.clone().send_all(stream::once(Ok(message))).wait().ok();
     }
 }
 
 trait Actor {}
 
-struct Mailbox {
-    actor_id_counter: ActorId,
-    // receiver: Receiver<Message>,
-    task: Arc<Mutex<Option<Task>>>,
-}
-impl Mailbox {
-    fn set_task(&mut self, task: Task) {
-        let mut guard = self.task.lock().unwrap();
-        *guard = Some(task);
-    }
-}
+// struct Mailbox {
+//     actor_id_counter: ActorId,
+//     // receiver: Receiver<Message>,
+//     task: Arc<Mutex<Option<Task>>>,
+// }
+// impl Mailbox {
+//     fn set_task(&mut self, task: Task) {
+//         let mut guard = self.task.lock().unwrap();
+//         *guard = Some(task);
+//     }
+// }
 
 struct Router {
     actors: HashMap<ActorId, Arc<Mutex<RootActor>>>,
-    mailboxes: HashMap<ActorId, Arc<Mutex<Mailbox>>>,
+    // mailboxes: HashMap<ActorId, Arc<Mutex<Mailbox>>>,
     actor_id_counter: ActorId,
 }
 impl Router {
     fn new() -> Router {
         Router {
             actors: HashMap::new(),
-            mailboxes: HashMap::new(),
+            // mailboxes: HashMap::new(),
             actor_id_counter: 0,
         }
     }
@@ -85,17 +86,22 @@ struct SystemMessageRegisterActor {
 #[derive(Clone)]
 struct Context {
     sender_register_actor: Sender<SystemMessageRegisterActor>,
+    system: Arc<Mutex<ActorSystem>>,
 }
 impl Context {
-    fn register_actor(&self, actor: Arc<Mutex<RootActor>>) {
-        println!("registering actor");
-        self.sender_register_actor
-            .clone()
-            .send_all(stream::once(Ok(SystemMessageRegisterActor {
-                actor: actor,
-            })))
-            .wait()
-            .ok();
+    // fn register_actor(&self, actor: Arc<Mutex<RootActor>>) {
+    //     println!("registering actor");
+    //     self.sender_register_actor
+    //         .clone()
+    //         .send_all(stream::once(Ok(SystemMessageRegisterActor {
+    //             actor: actor,
+    //         })))
+    //         .wait()
+    //         .ok();
+    // }
+
+    fn register_actor(&self, actor: Arc<Mutex<RootActor>>) -> ActorAddress {
+        self.system.lock().unwrap().register_actor(actor)
     }
 }
 
@@ -107,20 +113,21 @@ impl Dispatcher {
 
             let (system_sender, system_receiver) = channel::<SystemMessageRegisterActor>(64);
 
-            let mut actor_system = ActorSystem::create(system_sender.clone());
+            let mut actor_system = Arc::new(Mutex::new(ActorSystem::create(system_sender.clone())));
             let context = Context {
                 sender_register_actor: system_sender.clone(),
+                system: actor_system.clone(),
             };
 
             let actor = Arc::new(Mutex::new(RootActor {}));
             let address = context.register_actor(actor);
-            // address.send("first message ever sent");
+            address.send("first actor message ever sent".to_string());
 
             tokio::spawn(
                 system_receiver
                     .map(move |message: SystemMessageRegisterActor| {
                         println!("ActorSystem received SystemMessageRegisterActor");
-                        actor_system.handle(message);
+                        actor_system.lock().unwrap().handle(message);
                     })
                     .collect()
                     .then(|_| Ok(())),
