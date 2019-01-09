@@ -4,9 +4,9 @@ extern crate tokio;
 use futures::sync::mpsc::*;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
-use std::sync::{Mutex, MutexGuard};
-use tokio::prelude::task::Task;
+use std::sync::{Mutex, Arc};
+use std::thread;
+use std::time::Duration;
 use tokio::prelude::*;
 
 type Message = String;
@@ -30,34 +30,24 @@ impl Eq for ActorAddress {}
 impl ActorAddress {
     fn send(&self, message: Message) {
         println!("sending message");
-        self.sender.clone().send_all(stream::once(Ok(message))).wait().ok();
+        self.sender
+            .clone()
+            .send_all(stream::once(Ok(message)))
+            .wait()
+            .ok();
     }
 }
 
 trait Actor {}
 
-// struct Mailbox {
-//     actor_id_counter: ActorId,
-//     // receiver: Receiver<Message>,
-//     task: Arc<Mutex<Option<Task>>>,
-// }
-// impl Mailbox {
-//     fn set_task(&mut self, task: Task) {
-//         let mut guard = self.task.lock().unwrap();
-//         *guard = Some(task);
-//     }
-// }
-
 struct Router {
     actors: HashMap<ActorId, Arc<Mutex<RootActor>>>,
-    // mailboxes: HashMap<ActorId, Arc<Mutex<Mailbox>>>,
     actor_id_counter: ActorId,
 }
 impl Router {
     fn new() -> Router {
         Router {
             actors: HashMap::new(),
-            // mailboxes: HashMap::new(),
             actor_id_counter: 0,
         }
     }
@@ -79,26 +69,28 @@ impl Router {
     }
 }
 
-struct SystemMessageRegisterActor {
-    actor: Arc<Mutex<RootActor>>,
+struct SystemMessage {
+    message_type: SystemMessageType,
+    payload: Option<String>,
+}
+enum SystemMessageType {
+    STOP,
 }
 
 #[derive(Clone)]
 struct Context {
-    sender_register_actor: Sender<SystemMessageRegisterActor>,
+    sender_register_actor: Sender<SystemMessage>,
     system: Arc<Mutex<ActorSystem>>,
 }
 impl Context {
-    // fn register_actor(&self, actor: Arc<Mutex<RootActor>>) {
-    //     println!("registering actor");
-    //     self.sender_register_actor
-    //         .clone()
-    //         .send_all(stream::once(Ok(SystemMessageRegisterActor {
-    //             actor: actor,
-    //         })))
-    //         .wait()
-    //         .ok();
-    // }
+    fn send_system_message(&self, system_message: SystemMessage) {
+        println!("registering actor");
+        self.sender_register_actor
+            .clone()
+            .send_all(stream::once(Ok(system_message)))
+            .wait()
+            .ok();
+    }
 
     fn register_actor(&self, actor: Arc<Mutex<RootActor>>) -> ActorAddress {
         self.system.lock().unwrap().register_actor(actor)
@@ -111,29 +103,47 @@ impl Dispatcher {
         tokio::run(future::ok(()).map(move |_| {
             println!("creating ActorSystem");
 
-            let (system_sender, system_receiver) = channel::<SystemMessageRegisterActor>(64);
+            // establish system messae channel
+            let (system_sender, system_receiver) = channel::<SystemMessage>(64);
 
-            let mut actor_system = Arc::new(Mutex::new(ActorSystem::create(system_sender.clone())));
+            // init actor system
+            let actor_system = Arc::new(Mutex::new(ActorSystem::create()));
+            let actor_system_clone = actor_system.clone();
             let context = Context {
                 sender_register_actor: system_sender.clone(),
                 system: actor_system.clone(),
             };
 
-            let actor = Arc::new(Mutex::new(RootActor {}));
-            let address = context.register_actor(actor);
-            address.send("first actor message ever sent".to_string());
+            // spawn root actor
+            let root_actor = Arc::new(Mutex::new(RootActor {}));
+            let address = context.register_actor(root_actor);
 
+            // DEBUG: send some messages
+            tokio::spawn(future::ok(()).map(move |_| {
+                thread::sleep(Duration::from_millis(1000));
+                address.send("first actor message ever sent".to_string());
+                thread::sleep(Duration::from_millis(2000));
+                context.send_system_message(SystemMessage {
+                    message_type: SystemMessageType::STOP,
+                    payload: None,
+                })
+            }));
+
+            // spawn system message handler task
             tokio::spawn(
                 system_receiver
-                    .map(move |message: SystemMessageRegisterActor| {
-                        println!("ActorSystem received SystemMessageRegisterActor");
-                        actor_system.lock().unwrap().handle(message);
+                    .map(move |message: SystemMessage| {
+                        println!("handling system message");
+                        actor_system_clone.lock().unwrap().handle(message);
                     })
                     .collect()
                     .then(|_| Ok(())),
             );
 
-            loop {}
+            // keep thread running TODO improve
+            while actor_system.lock().unwrap().running {
+                thread::sleep(Duration::from_millis(100));
+            }
         }));
     }
 
@@ -151,12 +161,14 @@ impl Dispatcher {
 struct ActorSystem {
     dispatcher: Dispatcher,
     router: Router,
+    running: bool,
 }
 impl ActorSystem {
-    fn create(system_sender: Sender<SystemMessageRegisterActor>) -> ActorSystem {
+    fn create() -> ActorSystem {
         ActorSystem {
             dispatcher: Dispatcher {},
             router: Router::new(),
+            running: true,
         }
     }
 
@@ -169,9 +181,15 @@ impl ActorSystem {
         address
     }
 }
-impl Handler<SystemMessageRegisterActor> for ActorSystem {
-    fn handle(&mut self, message: SystemMessageRegisterActor) {
-        self.register_actor(message.actor);
+impl Handler<SystemMessage> for ActorSystem {
+    fn handle(&mut self, message: SystemMessage) {
+        match message.message_type {
+            SystemMessageType::STOP => {
+                println!("!!! received STOP system message");
+                self.running = false;
+            }
+            _ => println!("!!! received unknown system message"),
+        }
     }
 }
 
