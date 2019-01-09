@@ -6,45 +6,8 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::{Mutex, MutexGuard};
-use std::thread;
-use std::thread::sleep;
-use std::time::Duration;
 use tokio::prelude::task::Task;
 use tokio::prelude::*;
-
-// struct CheckMailboxTask {
-//     mailbox: Arc<Mutex<Mailbox>>,
-// }
-// impl CheckMailboxTask {
-//     fn run() {
-//         println!("running task");
-//     }
-// }
-// impl Future for CheckMailboxTask {
-//     type Item = ();
-//     type Error = ();
-
-//     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-//         println!("poll waits for lock of mailbox");
-//         let mut mailbox = self.mailbox.lock().unwrap();
-//         println!("poll enters lock of mailbox");
-//         let task = futures::task::current();
-//         mailbox.set_task(task);
-//         let message: Result<Message, TryRecvError> = mailbox.receiver.try_recv();
-//         let r = match message {
-//             Ok(msg) => {
-//                 println!("polled ready");
-//                 Ok(Async::Ready(()))
-//             }
-//             _ => {
-//                 println!("polled not ready");
-//                 Ok(Async::NotReady)
-//             }
-//         };
-//         println!("poll leaves lock of mailbox");
-//         r
-//     }
-// }
 
 type Message = String;
 type ActorId = u64;
@@ -64,6 +27,11 @@ impl PartialEq for ActorAddress {
     }
 }
 impl Eq for ActorAddress {}
+impl ActorAddress {
+    fn send(messae: Message) {
+        // TODO
+    }
+}
 
 trait Actor {}
 
@@ -80,7 +48,7 @@ impl Mailbox {
 }
 
 struct Router {
-    actors: HashMap<ActorId, TestActor>,
+    actors: HashMap<ActorId, Arc<Mutex<RootActor>>>,
     mailboxes: HashMap<ActorId, Arc<Mutex<Mailbox>>>,
     actor_id_counter: ActorId,
 }
@@ -93,16 +61,14 @@ impl Router {
         }
     }
 
-    fn register_actor(&mut self, actor: TestActor) -> (ActorAddress, Receiver<Message>) {
+    fn register_actor(
+        &mut self,
+        actor: Arc<Mutex<RootActor>>,
+    ) -> (ActorAddress, Receiver<Message>) {
         self.actor_id_counter += 1;
         self.actors.insert(self.actor_id_counter.clone(), actor);
 
         let (sender, receiver) = channel::<Message>(16);
-        let mailbox = Mailbox {
-            actor_id_counter: self.actor_id_counter.clone(),
-            // receiver: rx,
-            task: Arc::new(Mutex::new(Option::None)),
-        };
 
         let address = ActorAddress {
             id: self.actor_id_counter.clone(),
@@ -110,17 +76,10 @@ impl Router {
         };
         (address, receiver)
     }
-
-    fn get_mailbox(&self, id: &ActorId) -> Option<Arc<Mutex<Mailbox>>> {
-        match self.mailboxes.get(id) {
-            Option::None => Option::None,
-            Option::Some(m) => Option::Some(Arc::clone(m)),
-        }
-    }
 }
 
 struct SystemMessageRegisterActor {
-    actor: Arc<Mutex<TestActor>>,
+    actor: Arc<Mutex<RootActor>>,
 }
 
 #[derive(Clone)]
@@ -128,7 +87,7 @@ struct Context {
     sender_register_actor: Sender<SystemMessageRegisterActor>,
 }
 impl Context {
-    fn register_actor(&self, actor: Arc<Mutex<TestActor>>) {
+    fn register_actor(&self, actor: Arc<Mutex<RootActor>>) {
         println!("registering actor");
         self.sender_register_actor
             .clone()
@@ -142,24 +101,32 @@ impl Context {
 
 struct Dispatcher {}
 impl Dispatcher {
-    fn start_main(
-        &self,
-        receiver_register_actor: Receiver<SystemMessageRegisterActor>,
-        context: Context,
-    ) {
+    fn start_main() {
         tokio::run(future::ok(()).map(move |_| {
-            println!("spawning task: receiver for SystemMessageRegisterActor");
+            println!("creating ActorSystem");
+
+            let (system_sender, system_receiver) = channel::<SystemMessageRegisterActor>(64);
+
+            let mut actor_system = ActorSystem::create(system_sender.clone());
+            let context = Context {
+                sender_register_actor: system_sender.clone(),
+            };
+
+            let actor = Arc::new(Mutex::new(RootActor {}));
+            let address = context.register_actor(actor);
+            // address.send("first message ever sent");
+
             tokio::spawn(
-                receiver_register_actor
-                    .map(|message: SystemMessageRegisterActor| {
-                        println!("ActorSystem received SystemMessageRegisterActor")
+                system_receiver
+                    .map(move |message: SystemMessageRegisterActor| {
+                        println!("ActorSystem received SystemMessageRegisterActor");
+                        actor_system.handle(message);
                     })
                     .collect()
                     .then(|_| Ok(())),
             );
 
-            let actor = Arc::new(Mutex::new(TestActor {}));
-            context.register_actor(actor);
+            loop {}
         }));
     }
 
@@ -177,36 +144,41 @@ impl Dispatcher {
 struct ActorSystem {
     dispatcher: Dispatcher,
     router: Router,
-    context: Context,
 }
 impl ActorSystem {
-    fn start() {
-        let (sender_register_actor, receiver_register_actor) =
-            channel::<SystemMessageRegisterActor>(64);
-
-        let context = Context {
-            sender_register_actor: sender_register_actor.clone(),
-        };
-
-        let actor_system = ActorSystem {
+    fn create(system_sender: Sender<SystemMessageRegisterActor>) -> ActorSystem {
+        ActorSystem {
             dispatcher: Dispatcher {},
             router: Router::new(),
-            context,
-        };
-
-        actor_system
-            .dispatcher
-            .start_main(receiver_register_actor, actor_system.context.clone());
+        }
     }
-    fn register_actor(&mut self, actor: TestActor) -> ActorAddress {
+
+    fn start() {
+        Dispatcher::start_main();
+    }
+    fn register_actor(&mut self, actor: Arc<Mutex<RootActor>>) -> ActorAddress {
         let (address, mailbox_receiver) = self.router.register_actor(actor);
         self.dispatcher.register_mailbox(mailbox_receiver);
         address
     }
 }
+impl Handler<SystemMessageRegisterActor> for ActorSystem {
+    fn handle(&mut self, message: SystemMessageRegisterActor) {
+        self.register_actor(message.actor);
+    }
+}
 
-struct TestActor;
-impl Actor for TestActor {}
+trait Handler<T> {
+    fn handle(&mut self, messae: T);
+}
+
+struct RootActor;
+impl Actor for RootActor {}
+impl Handler<Message> for RootActor {
+    fn handle(&mut self, message: Message) {
+        println!("root actor received message: {}", message);
+    }
+}
 
 fn main() {
     println!("init");
