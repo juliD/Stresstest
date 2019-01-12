@@ -4,7 +4,7 @@ extern crate tokio;
 use futures::sync::mpsc::*;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tokio::prelude::*;
@@ -84,7 +84,6 @@ struct Context {
 }
 impl Context {
     fn send_system_message(&self, system_message: SystemMessage) {
-        println!("registering actor");
         self.sender_register_actor
             .clone()
             .send_all(stream::once(Ok(system_message)))
@@ -99,59 +98,22 @@ impl Context {
 
 struct Dispatcher {}
 impl Dispatcher {
-    fn start_main() {
+    fn run_setup<F>(f: F, context: Context)
+    where
+        F: FnOnce(Context) + 'static + Send,
+    {
         tokio::run(future::ok(()).map(move |_| {
-            println!("creating ActorSystem");
-
-            // establish system messae channel
-            let (system_sender, system_receiver) = channel::<SystemMessage>(64);
-
-            // init actor system
-            let actor_system = Arc::new(Mutex::new(ActorSystem::create()));
-            let actor_system_clone = actor_system.clone();
-            let context = Context {
-                sender_register_actor: system_sender.clone(),
-                system: actor_system.clone(),
-            };
-
-            // spawn root actor
-            let root_actor = Arc::new(Mutex::new(RootActor {}));
-            let address = context.register_actor(root_actor);
-
-            // DEBUG: send some messages
-            tokio::spawn(future::ok(()).map(move |_| {
-                thread::sleep(Duration::from_millis(1000));
-                address.send("first actor message ever sent".to_string());
-                thread::sleep(Duration::from_millis(2000));
-                context.send_system_message(SystemMessage {
-                    message_type: SystemMessageType::STOP,
-                    payload: None,
-                })
-            }));
-
-            // spawn system message handler task
-            tokio::spawn(
-                system_receiver
-                    .map(move |message: SystemMessage| {
-                        println!("handling system message");
-                        actor_system_clone.lock().unwrap().handle(message);
-                    })
-                    .collect()
-                    .then(|_| Ok(())),
-            );
-
-            // keep thread running TODO improve
-            while actor_system.lock().unwrap().running {
-                thread::sleep(Duration::from_millis(100));
-            }
+            println!("setting up system");
+            f(context);
         }));
     }
 
-    fn register_mailbox(&self, receiver: Receiver<Message>) {
-        println!("spawning task: mailbox");
+    fn register_mailbox(&self, receiver: Receiver<Message>, actor: Arc<Mutex<RootActor>>) {
         tokio::spawn(
             receiver
-                .map(|message: Message| println!("message {}", message))
+                .map(move |message: Message| {
+                    actor.lock().unwrap().handle(message);
+                })
                 .collect()
                 .then(|_| Ok(())),
         );
@@ -161,23 +123,50 @@ impl Dispatcher {
 struct ActorSystem {
     dispatcher: Dispatcher,
     router: Router,
-    running: bool,
 }
 impl ActorSystem {
     fn create() -> ActorSystem {
+        println!("creating ActorSystem");
         ActorSystem {
             dispatcher: Dispatcher {},
             router: Router::new(),
-            running: true,
         }
     }
 
-    fn start() {
-        Dispatcher::start_main();
+    fn start<F>(f: F)
+    where
+        F: FnOnce(Context) + 'static + Send,
+    {
+        // establish system messae channel
+        let (system_sender, system_receiver) = channel::<SystemMessage>(64);
+
+        // init actor system
+        let actor_system = Arc::new(Mutex::new(ActorSystem::create()));
+        let actor_system_clone = actor_system.clone();
+
+        let context = Context {
+            sender_register_actor: system_sender.clone(),
+            system: actor_system.clone(),
+        };
+
+        Dispatcher::run_setup(f, context.clone());
+
+        // spawn system message handler task
+        tokio::run(
+            system_receiver
+                .map(move |message: SystemMessage| {
+                    println!("handling system message");
+                    actor_system_clone.lock().unwrap().handle(message);
+                })
+                .collect()
+                .then(|_| Ok(())),
+        );
     }
     fn register_actor(&mut self, actor: Arc<Mutex<RootActor>>) -> ActorAddress {
-        let (address, mailbox_receiver) = self.router.register_actor(actor);
-        self.dispatcher.register_mailbox(mailbox_receiver);
+        println!("registering new actor: {}", actor.lock().unwrap().name);
+        let (address, mailbox_receiver) = self.router.register_actor(actor.clone());
+        self.dispatcher
+            .register_mailbox(mailbox_receiver, actor.clone());
         address
     }
 }
@@ -186,7 +175,8 @@ impl Handler<SystemMessage> for ActorSystem {
         match message.message_type {
             SystemMessageType::STOP => {
                 println!("!!! received STOP system message");
-                self.running = false;
+                // TODO: somehow stop system loop
+                println!("doesn't work right now though");
             }
             _ => println!("!!! received unknown system message"),
         }
@@ -194,10 +184,12 @@ impl Handler<SystemMessage> for ActorSystem {
 }
 
 trait Handler<T> {
-    fn handle(&mut self, messae: T);
+    fn handle(&mut self, message: T);
 }
 
-struct RootActor;
+struct RootActor {
+    name: String,
+}
 impl Actor for RootActor {}
 impl Handler<Message> for RootActor {
     fn handle(&mut self, message: Message) {
@@ -207,6 +199,24 @@ impl Handler<Message> for RootActor {
 
 fn main() {
     println!("init");
-    ActorSystem::start();
+    ActorSystem::start(|context: Context| {
+        println!("setup closure");
+        let root_actor = Arc::new(Mutex::new(RootActor {
+            name: "root actor".to_owned(),
+        }));
+        let addr = context.register_actor(root_actor);
+
+        tokio::spawn(future::ok(()).map(move |_| {
+            thread::sleep(Duration::from_millis(1000));
+            addr.send("message 1".to_owned());
+            thread::sleep(Duration::from_millis(2000));
+            addr.send("message 2".to_owned());
+            thread::sleep(Duration::from_millis(2000));
+            context.send_system_message(SystemMessage {
+                message_type: SystemMessageType::STOP,
+                payload: None,
+            });
+        }));
+    });
     println!("done");
 }
