@@ -12,6 +12,7 @@ use tokio::prelude::*;
 type Message = String;
 type ActorId = u64;
 
+#[derive(Clone)]
 struct ActorAddress {
     id: ActorId,
     sender: Sender<Message>,
@@ -29,7 +30,6 @@ impl PartialEq for ActorAddress {
 impl Eq for ActorAddress {}
 impl ActorAddress {
     fn send(&self, message: Message) {
-        println!("sending message");
         self.sender
             .clone()
             .send_all(stream::once(Ok(message)))
@@ -38,10 +38,12 @@ impl ActorAddress {
     }
 }
 
-trait Actor {}
+trait Actor {
+    fn handle(&mut self, message: Message, context: Context);
+}
 
 struct Router {
-    actors: HashMap<ActorId, Arc<Mutex<RootActor>>>,
+    actors: HashMap<ActorId, Arc<Mutex<Actor + Send>>>,
     actor_id_counter: ActorId,
 }
 impl Router {
@@ -54,7 +56,7 @@ impl Router {
 
     fn register_actor(
         &mut self,
-        actor: Arc<Mutex<RootActor>>,
+        actor: Arc<Mutex<Actor + Send>>,
     ) -> (ActorAddress, Receiver<Message>) {
         self.actor_id_counter += 1;
         self.actors.insert(self.actor_id_counter.clone(), actor);
@@ -91,8 +93,11 @@ impl Context {
             .ok();
     }
 
-    fn register_actor(&self, actor: Arc<Mutex<RootActor>>) -> ActorAddress {
-        self.system.lock().unwrap().register_actor(actor)
+    fn register_actor(&self, actor: Arc<Mutex<Actor + Send>>) -> ActorAddress {
+        self.system
+            .lock()
+            .unwrap()
+            .register_actor(actor, self.clone())
     }
 }
 
@@ -108,11 +113,16 @@ impl Dispatcher {
         }));
     }
 
-    fn register_mailbox(&self, receiver: Receiver<Message>, actor: Arc<Mutex<RootActor>>) {
+    fn register_mailbox(
+        &self,
+        receiver: Receiver<Message>,
+        actor: Arc<Mutex<Actor + Send>>,
+        context: Context,
+    ) {
         tokio::spawn(
             receiver
                 .map(move |message: Message| {
-                    actor.lock().unwrap().handle(message);
+                    actor.lock().unwrap().handle(message, context.clone());
                 })
                 .collect()
                 .then(|_| Ok(())),
@@ -137,7 +147,7 @@ impl ActorSystem {
     where
         F: FnOnce(Context) + 'static + Send,
     {
-        // establish system messae channel
+        // establish system message channel
         let (system_sender, system_receiver) = channel::<SystemMessage>(64);
 
         // init actor system
@@ -155,23 +165,28 @@ impl ActorSystem {
         tokio::run(
             system_receiver
                 .map(move |message: SystemMessage| {
-                    println!("handling system message");
-                    actor_system_clone.lock().unwrap().handle(message);
+                    actor_system_clone
+                        .lock()
+                        .unwrap()
+                        .handle_system_message(message);
                 })
                 .collect()
                 .then(|_| Ok(())),
         );
     }
-    fn register_actor(&mut self, actor: Arc<Mutex<RootActor>>) -> ActorAddress {
-        println!("registering new actor: {}", actor.lock().unwrap().name);
+    fn register_actor(
+        &mut self,
+        actor: Arc<Mutex<Actor + Send>>,
+        context: Context,
+    ) -> ActorAddress {
+        // println!("registering new actor: {}", actor.lock().unwrap().name);
         let (address, mailbox_receiver) = self.router.register_actor(actor.clone());
         self.dispatcher
-            .register_mailbox(mailbox_receiver, actor.clone());
+            .register_mailbox(mailbox_receiver, actor.clone(), context.clone());
         address
     }
-}
-impl Handler<SystemMessage> for ActorSystem {
-    fn handle(&mut self, message: SystemMessage) {
+
+    fn handle_system_message(&mut self, message: SystemMessage) {
         match message.message_type {
             SystemMessageType::STOP => {
                 println!("!!! received STOP system message");
@@ -183,39 +198,45 @@ impl Handler<SystemMessage> for ActorSystem {
     }
 }
 
-trait Handler<T> {
-    fn handle(&mut self, message: T);
+struct SomeActor {}
+impl Actor for SomeActor {
+    fn handle(&mut self, message: Message, context: Context) {
+        println!("some actor received message: {}", message);
+    }
 }
 
-struct RootActor {
-    name: String,
+struct OtherActor {
+    target: ActorAddress,
 }
-impl Actor for RootActor {}
-impl Handler<Message> for RootActor {
-    fn handle(&mut self, message: Message) {
-        println!("root actor received message: {}", message);
+impl Actor for OtherActor {
+    fn handle(&mut self, message: Message, context: Context) {
+        println!("other actor received message: {}", message);
+        self.target.send("I just got a message".to_owned());
     }
 }
 
 fn main() {
     println!("init");
     ActorSystem::start(|context: Context| {
-        println!("setup closure");
-        let root_actor = Arc::new(Mutex::new(RootActor {
-            name: "root actor".to_owned(),
+        
+        let some_actor = Arc::new(Mutex::new(SomeActor {}));
+        let some_addr = context.register_actor(some_actor);
+
+        let other_actor = Arc::new(Mutex::new(OtherActor {
+            target: some_addr.clone(),
         }));
-        let addr = context.register_actor(root_actor);
+        let other_addr = context.register_actor(other_actor);
 
         tokio::spawn(future::ok(()).map(move |_| {
             thread::sleep(Duration::from_millis(1000));
-            addr.send("message 1".to_owned());
+            other_addr.send("message 1".to_owned());
             thread::sleep(Duration::from_millis(2000));
-            addr.send("message 2".to_owned());
-            thread::sleep(Duration::from_millis(2000));
-            context.send_system_message(SystemMessage {
-                message_type: SystemMessageType::STOP,
-                payload: None,
-            });
+            other_addr.send("message 2".to_owned());
+            // thread::sleep(Duration::from_millis(2000));
+            // context.send_system_message(SystemMessage {
+            //     message_type: SystemMessageType::STOP,
+            //     payload: None,
+            // });
         }));
     });
     println!("done");
