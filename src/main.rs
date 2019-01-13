@@ -42,28 +42,11 @@ trait Actor {
     fn handle(&mut self, message: Box<Message + Send>, context: Context);
 }
 
-struct SystemMessage {
-    message_type: SystemMessageType,
-    payload: Option<String>,
-}
-enum SystemMessageType {
-    STOP,
-}
-
 #[derive(Clone)]
 struct Context {
-    sender_register_actor: Sender<SystemMessage>,
     system: Arc<Mutex<Router>>,
 }
 impl Context {
-    fn send_system_message(&self, system_message: SystemMessage) {
-        self.sender_register_actor
-            .clone()
-            .send_all(stream::once(Ok(system_message)))
-            .wait()
-            .ok();
-    }
-
     fn register_actor(&self, actor: Arc<Mutex<Actor + Send>>) -> ActorAddress {
         self.system
             .lock()
@@ -120,41 +103,28 @@ impl Router {
     where
         F: FnOnce(Context) + 'static + Send,
     {
-        // establish system message channel
-        let (system_sender, system_receiver) = channel::<SystemMessage>(64);
-
         // init actor system
         let actor_system = Arc::new(Mutex::new(Router::create()));
         let actor_system_clone = actor_system.clone();
 
         let context = Context {
-            sender_register_actor: system_sender.clone(),
             system: actor_system.clone(),
         };
 
         Dispatcher::run_setup(f, context.clone());
 
-        // spawn system message handler task
-        tokio::run(
-            system_receiver
-                .map(move |message: SystemMessage| {
-                    actor_system_clone
-                        .lock()
-                        .unwrap()
-                        .handle_system_message(message);
-                })
-                .collect()
-                .then(|_| Ok(())),
-        );
+        // run blocking stream to keep system alive
+        let (_, system_receiver) = channel::<u8>(64);
+        tokio::run(system_receiver.map(move |_| {}).collect().then(|_| Ok(())));
     }
     fn register_actor(
         &mut self,
         actor: Arc<Mutex<Actor + Send>>,
         context: Context,
     ) -> ActorAddress {
-
         self.actor_id_counter += 1;
-        self.actors.insert(self.actor_id_counter.clone(), actor.clone());
+        self.actors
+            .insert(self.actor_id_counter.clone(), actor.clone());
 
         let (sender, receiver) = channel::<Box<Message + Send>>(16);
 
@@ -166,17 +136,6 @@ impl Router {
         self.dispatcher
             .register_mailbox(receiver, actor.clone(), context.clone());
         address
-    }
-
-    fn handle_system_message(&mut self, message: SystemMessage) {
-        match message.message_type {
-            SystemMessageType::STOP => {
-                println!("!!! received STOP system message");
-                // TODO: somehow stop system loop
-                println!("doesn't work right now though");
-            }
-            _ => println!("!!! received unknown system message"),
-        }
     }
 }
 
@@ -199,7 +158,7 @@ impl Actor for OtherActor {
                 self.target.send(Box::new(HelloMessage {
                     greeting: "Hi".to_owned(),
                 }));
-            },
+            }
         }
     }
 }
