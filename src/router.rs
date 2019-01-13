@@ -22,15 +22,15 @@ impl Router {
         }
     }
 
-    pub fn start<F>(f: F)
+    fn start<F>(f: F)
     where
         F: FnOnce(Context) + 'static + Send,
     {
         // init actor system
-        let actor_system = Arc::new(Mutex::new(Router::create()));
+        let router = Arc::new(Mutex::new(Router::create()));
 
         let context = Context {
-            system: actor_system.clone(),
+            system: router.clone(),
         };
         let context_clone = context.clone();
 
@@ -85,5 +85,12 @@ impl Context {
             .lock()
             .unwrap()
             .register_actor(actor, self.clone())
+    }
+    
+    pub fn start_system<F>(f: F)
+    where
+        F: FnOnce(Context) + 'static + Send,
+    {
+        Router::start(f);
     }
 }

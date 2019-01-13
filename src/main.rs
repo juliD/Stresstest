@@ -31,7 +31,7 @@ impl Actor for OtherActor {
 
 fn main() {
     println!("init");
-    Router::start(|context: Context| {
+    Context::start_system(|context: Context| {
         let some_actor = SomeActor {};
         let some_addr = context.register_actor(some_actor);
 
