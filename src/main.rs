@@ -42,35 +42,6 @@ trait Actor {
     fn handle(&mut self, message: Box<Message + Send>, context: Context);
 }
 
-struct Router {
-    actors: HashMap<ActorId, Arc<Mutex<Actor + Send>>>,
-    actor_id_counter: ActorId,
-}
-impl Router {
-    fn new() -> Router {
-        Router {
-            actors: HashMap::new(),
-            actor_id_counter: 0,
-        }
-    }
-
-    fn register_actor(
-        &mut self,
-        actor: Arc<Mutex<Actor + Send>>,
-    ) -> (ActorAddress, Receiver<Box<Message + Send>>) {
-        self.actor_id_counter += 1;
-        self.actors.insert(self.actor_id_counter.clone(), actor);
-
-        let (sender, receiver) = channel::<Box<Message + Send>>(16);
-
-        let address = ActorAddress {
-            id: self.actor_id_counter.clone(),
-            sender: sender,
-        };
-        (address, receiver)
-    }
-}
-
 struct SystemMessage {
     message_type: SystemMessageType,
     payload: Option<String>,
@@ -82,7 +53,7 @@ enum SystemMessageType {
 #[derive(Clone)]
 struct Context {
     sender_register_actor: Sender<SystemMessage>,
-    system: Arc<Mutex<ActorSystem>>,
+    system: Arc<Mutex<Router>>,
 }
 impl Context {
     fn send_system_message(&self, system_message: SystemMessage) {
@@ -130,16 +101,18 @@ impl Dispatcher {
     }
 }
 
-struct ActorSystem {
+struct Router {
     dispatcher: Dispatcher,
-    router: Router,
+    actors: HashMap<ActorId, Arc<Mutex<Actor + Send>>>,
+    actor_id_counter: ActorId,
 }
-impl ActorSystem {
-    fn create() -> ActorSystem {
+impl Router {
+    fn create() -> Router {
         println!("creating ActorSystem");
-        ActorSystem {
+        Router {
             dispatcher: Dispatcher {},
-            router: Router::new(),
+            actors: HashMap::new(),
+            actor_id_counter: 0,
         }
     }
 
@@ -151,7 +124,7 @@ impl ActorSystem {
         let (system_sender, system_receiver) = channel::<SystemMessage>(64);
 
         // init actor system
-        let actor_system = Arc::new(Mutex::new(ActorSystem::create()));
+        let actor_system = Arc::new(Mutex::new(Router::create()));
         let actor_system_clone = actor_system.clone();
 
         let context = Context {
@@ -179,10 +152,19 @@ impl ActorSystem {
         actor: Arc<Mutex<Actor + Send>>,
         context: Context,
     ) -> ActorAddress {
-        // println!("registering new actor: {}", actor.lock().unwrap().name);
-        let (address, mailbox_receiver) = self.router.register_actor(actor.clone());
+
+        self.actor_id_counter += 1;
+        self.actors.insert(self.actor_id_counter.clone(), actor.clone());
+
+        let (sender, receiver) = channel::<Box<Message + Send>>(16);
+
+        let address = ActorAddress {
+            id: self.actor_id_counter.clone(),
+            sender: sender,
+        };
+
         self.dispatcher
-            .register_mailbox(mailbox_receiver, actor.clone(), context.clone());
+            .register_mailbox(receiver, actor.clone(), context.clone());
         address
     }
 
@@ -229,7 +211,7 @@ impl Message for HelloMessage {}
 
 fn main() {
     println!("init");
-    ActorSystem::start(|context: Context| {
+    Router::start(|context: Context| {
         let some_actor = Arc::new(Mutex::new(SomeActor {}));
         let some_addr = context.register_actor(some_actor);
 
