@@ -75,7 +75,23 @@ impl Dispatcher {
         }));
     }
 
-    fn spawn<F>(&self, receiver: Receiver<Envelope>, f: F)
+    fn run_background<F>(f: F)
+    where
+        F: FnOnce() + 'static + Send,
+    {
+        tokio::spawn(future::ok(()).map(move |_| {
+            f();
+        }));
+    }
+
+    fn handle_stream_blocking<F>(receiver: Receiver<Envelope>, f: F)
+    where
+        F: FnMut(Envelope) + 'static + Send,
+    {
+        tokio::run(receiver.map(f).collect().then(|_| Ok(())));
+    }
+
+    fn handle_stream_background<F>(receiver: Receiver<Envelope>, f: F)
     where
         F: FnMut(Envelope) + 'static + Send,
     {
@@ -117,8 +133,8 @@ impl Router {
         });
 
         // run blocking stream to keep system alive
-        let (_, system_receiver) = channel::<u8>(64);
-        tokio::run(system_receiver.map(move |_| {}).collect().then(|_| Ok(())));
+        let (_, system_receiver) = channel::<Envelope>(8);
+        Dispatcher::handle_stream_blocking(system_receiver, move |_| {});
     }
     fn register_actor(
         &mut self,
@@ -136,7 +152,7 @@ impl Router {
             sender: sender,
         };
 
-        self.dispatcher.spawn(receiver, move |envelope| {
+        Dispatcher::handle_stream_background(receiver, move |envelope| {
             actor
                 .lock()
                 .unwrap()
@@ -174,7 +190,7 @@ fn main() {
         }));
         let other_addr = context.register_actor(other_actor);
 
-        tokio::spawn(future::ok(()).map(move |_| {
+        Dispatcher::run_background(move || {
             thread::sleep(Duration::from_millis(1000));
             other_addr.send(Message {
                 payload: "Hi".to_owned(),
@@ -183,7 +199,7 @@ fn main() {
             other_addr.send(Message {
                 payload: "Hello".to_owned(),
             });
-        }));
+        });
     });
     println!("done");
 }
