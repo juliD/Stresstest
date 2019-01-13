@@ -32,12 +32,12 @@ impl Actor for OtherActor {
 fn main() {
     println!("init");
     Router::start(|context: Context| {
-        let some_actor = Arc::new(Mutex::new(SomeActor {}));
+        let some_actor = SomeActor {};
         let some_addr = context.register_actor(some_actor);
 
-        let other_actor = Arc::new(Mutex::new(OtherActor {
+        let other_actor = OtherActor {
             target: some_addr.clone(),
-        }));
+        };
         let other_addr = context.register_actor(other_actor);
 
         Dispatcher::run_background(move || {
