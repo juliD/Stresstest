@@ -1,19 +1,15 @@
 extern crate futures;
 extern crate tokio;
+extern crate actor_model;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-mod message;
-mod dispatcher;
-mod actor;
-mod router;
-
-use crate::message::*;
-use crate::dispatcher::*;
-use crate::actor::*;
-use crate::router::*;
+use actor_model::message::*;
+use actor_model::dispatcher::*;
+use actor_model::actor::*;
+use actor_model::router::*;
 
 
 struct SomeActor {}

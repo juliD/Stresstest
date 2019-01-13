@@ -28,7 +28,6 @@ impl Router {
     {
         // init actor system
         let actor_system = Arc::new(Mutex::new(Router::create()));
-        let actor_system_clone = actor_system.clone();
 
         let context = Context {
             system: actor_system.clone(),
