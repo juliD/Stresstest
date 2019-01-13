@@ -9,13 +9,22 @@ use std::thread;
 use std::time::Duration;
 use tokio::prelude::*;
 
-trait Message {}
 type ActorId = u64;
+
+#[derive(Clone)]
+struct Message {
+    payload: String,
+}
+
+#[derive(Clone)]
+struct Envelope {
+    message: Message,
+}
 
 #[derive(Clone)]
 struct ActorAddress {
     id: ActorId,
-    sender: Sender<Box<Message + Send>>,
+    sender: Sender<Envelope>,
 }
 impl Hash for ActorAddress {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -29,17 +38,17 @@ impl PartialEq for ActorAddress {
 }
 impl Eq for ActorAddress {}
 impl ActorAddress {
-    fn send(&self, message: Box<Message + Send>) {
+    fn send(&self, message: Message) {
         self.sender
             .clone()
-            .send_all(stream::once(Ok(message)))
+            .send_all(stream::once(Ok(Envelope { message: message })))
             .wait()
             .ok();
     }
 }
 
 trait Actor {
-    fn handle(&mut self, message: Box<Message + Send>, context: Context);
+    fn handle(&mut self, message: Message, context: Context);
 }
 
 #[derive(Clone)]
@@ -57,30 +66,20 @@ impl Context {
 
 struct Dispatcher {}
 impl Dispatcher {
-    fn run_setup<F>(f: F, context: Context)
+    fn run_blocking<F>(f: F)
     where
-        F: FnOnce(Context) + 'static + Send,
+        F: FnOnce() + 'static + Send,
     {
         tokio::run(future::ok(()).map(move |_| {
-            println!("setting up system");
-            f(context);
+            f();
         }));
     }
 
-    fn register_mailbox(
-        &self,
-        receiver: Receiver<Box<Message + Send>>,
-        actor: Arc<Mutex<Actor + Send>>,
-        context: Context,
-    ) {
-        tokio::spawn(
-            receiver
-                .map(move |message: Box<Message + Send>| {
-                    actor.lock().unwrap().handle(message, context.clone());
-                })
-                .collect()
-                .then(|_| Ok(())),
-        );
+    fn spawn<F>(&self, receiver: Receiver<Envelope>, f: F)
+    where
+        F: FnMut(Envelope) + 'static + Send,
+    {
+        tokio::spawn(receiver.map(f).collect().then(|_| Ok(())));
     }
 }
 
@@ -110,8 +109,12 @@ impl Router {
         let context = Context {
             system: actor_system.clone(),
         };
+        let context_clone = context.clone();
 
-        Dispatcher::run_setup(f, context.clone());
+        Dispatcher::run_blocking(move || {
+            println!("setting up system");
+            f(context_clone);
+        });
 
         // run blocking stream to keep system alive
         let (_, system_receiver) = channel::<u8>(64);
@@ -126,23 +129,27 @@ impl Router {
         self.actors
             .insert(self.actor_id_counter.clone(), actor.clone());
 
-        let (sender, receiver) = channel::<Box<Message + Send>>(16);
+        let (sender, receiver) = channel::<Envelope>(16);
 
         let address = ActorAddress {
             id: self.actor_id_counter.clone(),
             sender: sender,
         };
 
-        self.dispatcher
-            .register_mailbox(receiver, actor.clone(), context.clone());
+        self.dispatcher.spawn(receiver, move |envelope| {
+            actor
+                .lock()
+                .unwrap()
+                .handle(envelope.message, context.clone());
+        });
         address
     }
 }
 
 struct SomeActor {}
 impl Actor for SomeActor {
-    fn handle(&mut self, message: Box<Message + Send>, context: Context) {
-        println!("some actor received a message");
+    fn handle(&mut self, message: Message, context: Context) {
+        println!("some actor received a message: {}", message.payload);
     }
 }
 
@@ -150,23 +157,11 @@ struct OtherActor {
     target: ActorAddress,
 }
 impl Actor for OtherActor {
-    fn handle(&mut self, message: Box<Message + Send>, context: Context) {
-        println!("other actor received a message");
-        match message {
-            HelloMessage => {
-                println!("  It's a HelloMessage");
-                self.target.send(Box::new(HelloMessage {
-                    greeting: "Hi".to_owned(),
-                }));
-            }
-        }
+    fn handle(&mut self, message: Message, context: Context) {
+        println!("other actor received a message: {}", message.payload);
+        self.target.send(message);
     }
 }
-
-struct HelloMessage {
-    greeting: String,
-}
-impl Message for HelloMessage {}
 
 fn main() {
     println!("init");
@@ -181,18 +176,13 @@ fn main() {
 
         tokio::spawn(future::ok(()).map(move |_| {
             thread::sleep(Duration::from_millis(1000));
-            other_addr.send(Box::new(HelloMessage {
-                greeting: "Hi".to_owned(),
-            }));
+            other_addr.send(Message {
+                payload: "Hi".to_owned(),
+            });
             thread::sleep(Duration::from_millis(2000));
-            other_addr.send(Box::new(HelloMessage {
-                greeting: "Hello".to_owned(),
-            }));
-            // thread::sleep(Duration::from_millis(2000));
-            // context.send_system_message(SystemMessage {
-            //     message_type: SystemMessageType::STOP,
-            //     payload: None,
-            // });
+            other_addr.send(Message {
+                payload: "Hello".to_owned(),
+            });
         }));
     });
     println!("done");
