@@ -40,8 +40,9 @@ impl Router {
         });
 
         // run blocking stream to keep system alive
-        let (_, system_receiver) = channel::<Envelope>(8);
-        Dispatcher::handle_stream_blocking(system_receiver, move |_| {});
+        // println!("run blocking stream to keep system alive");
+        // let (_, system_receiver) = channel::<Envelope>(8);
+        // Dispatcher::handle_stream_blocking(system_receiver, move |_| {});
     }
 
     pub fn register_actor<A>(&mut self, actor: A, context: Context) -> Address
@@ -86,7 +87,7 @@ impl Context {
             .unwrap()
             .register_actor(actor, self.clone())
     }
-    
+
     pub fn start_system<F>(f: F)
     where
         F: FnOnce(Context) + 'static + Send,
