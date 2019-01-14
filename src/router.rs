@@ -30,7 +30,7 @@ impl Router {
         let router = Arc::new(Mutex::new(Router::create()));
 
         let context = Context {
-            system: router.clone(),
+            router: router.clone(),
         };
         let context_clone = context.clone();
 
@@ -44,7 +44,7 @@ impl Router {
         Dispatcher::handle_stream_blocking(system_receiver, move |_| {});
     }
 
-    pub fn register_actor<A>(&mut self, actor: A, context: Context) -> ActorAddress
+    pub fn register_actor<A>(&mut self, actor: A, context: Context) -> Address
     where
         A: Actor + Send + 'static,
     {
@@ -55,7 +55,7 @@ impl Router {
 
         let (sender, receiver) = channel::<Envelope>(16);
 
-        let address = ActorAddress {
+        let address = Address {
             id: self.actor_id_counter.clone(),
             sender: sender,
         };
@@ -74,14 +74,14 @@ impl Router {
 
 #[derive(Clone)]
 pub struct Context {
-    system: Arc<Mutex<Router>>,
+    router: Arc<Mutex<Router>>,
 }
 impl Context {
-    pub fn register_actor<A>(&self, actor: A) -> ActorAddress
+    pub fn register_actor<A>(&self, actor: A) -> Address
     where
         A: Actor + Send + 'static,
     {
-        self.system
+        self.router
             .lock()
             .unwrap()
             .register_actor(actor, self.clone())

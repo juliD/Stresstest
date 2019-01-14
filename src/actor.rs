@@ -11,22 +11,22 @@ use crate::router::Context;
 pub type ActorId = u64;
 
 #[derive(Clone)]
-pub struct ActorAddress {
+pub struct Address {
     pub id: ActorId,
     pub sender: Sender<Envelope>,
 }
-impl Hash for ActorAddress {
+impl Hash for Address {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
-impl PartialEq for ActorAddress {
-    fn eq(&self, other: &ActorAddress) -> bool {
+impl PartialEq for Address {
+    fn eq(&self, other: &Address) -> bool {
         self.id == other.id
     }
 }
-impl Eq for ActorAddress {}
-impl ActorAddress {
+impl Eq for Address {}
+impl Address {
     pub fn send(&self, message: Message) {
         self.sender
             .clone()

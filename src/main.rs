@@ -12,7 +12,7 @@ use actor_model::message::*;
 use actor_model::router::*;
 
 struct SpawningActor {
-    children: LinkedList<ActorAddress>,
+    children: LinkedList<Address>,
     child_id_counter: u32,
 }
 impl SpawningActor {
@@ -53,7 +53,7 @@ impl Actor for ChildActor {
 }
 
 struct ForwardingActor {
-    target: ActorAddress,
+    target: Address,
 }
 impl Actor for ForwardingActor {
     fn handle(&mut self, message: Message, context: Context) {
