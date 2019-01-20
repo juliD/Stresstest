@@ -41,7 +41,8 @@ pub trait Actor {
 
 struct RootActor {
     context: ActorContext,
-    address: Sender<Envelope>
+    address: Address,
+    children: Vec<Box<Actor>>
 }
 
 impl Actor for RootActor {
@@ -72,7 +73,8 @@ impl RunSystem {
         let mut run_system = RunSystem {
             root_actor : RootActor { 
                 context: ActorContext::new(),
-                address: root_actor_address
+                address: root_actor_address,
+                children: vec![]
             }
         };
         run_system.init();
@@ -92,17 +94,24 @@ impl RunSystem {
 
     pub fn start(& self) {
         tokio::run(lazy(|| {
+
+
+
+
+
             Ok(())
         }));
     }
 
-    fn register<A>(actor: &mut A, parent_address: Address) where A: Actor + 'static {
+    fn register<A>(actor: &mut A, parent_address: Address) where A: Actor {
         let mut context = actor.get_context();
         context.parent_address = Some(parent_address);
     }
 
-    pub fn spawn<A>(&self, actor: &mut A) where A: Actor + 'static {
-        Self::register(actor, self.root_actor.address.clone());
+    pub fn register_root<A>(&self, actor: &mut A) where A: Actor {
+        let mut context = actor.get_context();
+        context.parent_address = Some(self.root_actor.address.clone());
+        //self.root_actor.children.push(Box::new(actor));
     }
 
 }
@@ -126,6 +135,6 @@ impl Actor for MyActor {
 fn main() {
     let system = RunSystem::new();
     let mut my_actor = MyActor{ context: ActorContext::new() };
-    system.spawn(&mut my_actor);
+    system.register_root(&mut my_actor);
     system.start();
 }
