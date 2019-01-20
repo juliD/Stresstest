@@ -47,26 +47,44 @@ impl Actor for RootActor {
 
 }
 
-struct RunSystem {}
+pub struct RunSystem {
+
+    root_actor: RootActor
+
+}
+
+pub fn start_system<F>(f: F) -> RunSystem 
+    where F: FnOnce() + 'static {
+
+    let mut runSystem = RunSystem { 
+        root_actor : RootActor { context: ActorContext::new() }
+    };
+    runSystem.init(f);
+    runSystem
+
+}
 
 impl RunSystem {
 
-    pub fn start<F>(f: F) where 
+    fn init<F>(&mut self, f: F) where 
         F: FnOnce() + 'static
     {
-        let mut actor = RootActor { context: ActorContext::new()};
-        Self::register(&mut actor, "$SYS");
+        Self::register(&mut self.root_actor, "$SYS");
         let envelope = Envelope {
             message: "Get the party started",
             sender_address: "$SYS"
         };
-        actor.handle(envelope);
+        self.root_actor.handle(envelope);
         f();
     }
 
     fn register<A>(actor: &mut A, parent_address: Address) where A: Actor + 'static {
         let mut context = actor.get_context();
         context.parent_address = Some(parent_address);
+    }
+
+    pub fn spawn<A>(actor: &mut A) where A: Actor + 'static {
+        Self::register(actor, "");
     }
 
 }
@@ -88,7 +106,7 @@ impl Actor for MyActor {
 }
 
 fn main() {
-    let mut system = RunSystem::start(|| {
+    let mut system = start_system(|| {
         println!("Started");
     });
     let my_actor = MyActor{ context: ActorContext::new() };
