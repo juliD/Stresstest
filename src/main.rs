@@ -56,11 +56,11 @@ pub struct RunSystem {
 pub fn start_system<F>(f: F) -> RunSystem 
     where F: FnOnce() + 'static {
 
-    let mut runSystem = RunSystem { 
+    let mut run_system = RunSystem { 
         root_actor : RootActor { context: ActorContext::new() }
     };
-    runSystem.init(f);
-    runSystem
+    run_system.init(f);
+    run_system
 
 }
 
@@ -83,8 +83,8 @@ impl RunSystem {
         context.parent_address = Some(parent_address);
     }
 
-    pub fn spawn<A>(actor: &mut A) where A: Actor + 'static {
-        Self::register(actor, "");
+    pub fn spawn<A>(&mut self, actor: &mut A) where A: Actor + 'static {
+        Self::register(actor, "RootActor");
     }
 
 }
@@ -100,7 +100,8 @@ impl Actor for MyActor {
     }
 
     fn handle(&mut self, envelope: Envelope) {
-        println!("Message: {} from: {}", envelope.message, envelope.sender_address)
+        println!("Parent Address of MyActor {}", self.get_context().parent_address.unwrap());
+        println!("Message: {} from: {}", envelope.message, envelope.sender_address);
     }
 
 }
@@ -109,5 +110,7 @@ fn main() {
     let mut system = start_system(|| {
         println!("Started");
     });
-    let my_actor = MyActor{ context: ActorContext::new() };
+    let mut my_actor = MyActor{ context: ActorContext::new() };
+    system.spawn(&mut my_actor);
+    my_actor.handle(Envelope { message: "Test", sender_address: "Outside world" });
 }
