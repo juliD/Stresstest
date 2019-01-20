@@ -1,5 +1,7 @@
+use std::sync::mpsc::{channel, Sender};
+
 type Message = &'static str;
-type Address = &'static str;
+type Address = Sender<Envelope>;
 
 pub struct Envelope {
     message: Message,
@@ -31,7 +33,8 @@ pub trait Actor {
 }
 
 struct RootActor {
-    context: ActorContext
+    context: ActorContext,
+    address: Sender<Envelope>
 }
 
 impl Actor for RootActor {
@@ -42,7 +45,7 @@ impl Actor for RootActor {
 
     fn handle(&mut self, envelope: Envelope) {
         println!("Initialized root actor");
-        println!("Message: {} from: {}", envelope.message, envelope.sender_address);  
+        //println!("Message: {} from: {}", envelope.message, envelope.sender_address);  
     }
 
 }
@@ -56,8 +59,13 @@ pub struct RunSystem {
 pub fn start_system<F>(f: F) -> RunSystem 
     where F: FnOnce() + 'static {
 
-    let mut run_system = RunSystem { 
-        root_actor : RootActor { context: ActorContext::new() }
+    // TODO: save mailbox of root actor somewhere
+    let (root_actor_address, root_actor_mailbox) = channel();
+    let mut run_system = RunSystem {
+        root_actor : RootActor { 
+            context: ActorContext::new(),
+            address: root_actor_address
+        }
     };
     run_system.init(f);
     run_system
@@ -69,10 +77,11 @@ impl RunSystem {
     fn init<F>(&mut self, f: F) where 
         F: FnOnce() + 'static
     {
-        Self::register(&mut self.root_actor, "$SYS");
+        let (run_system_address, run_system_mailbox) = channel();
+        Self::register(&mut self.root_actor, run_system_address.clone());
         let envelope = Envelope {
             message: "Get the party started",
-            sender_address: "$SYS"
+            sender_address: run_system_address
         };
         self.root_actor.handle(envelope);
         f();
@@ -84,7 +93,7 @@ impl RunSystem {
     }
 
     pub fn spawn<A>(&mut self, actor: &mut A) where A: Actor + 'static {
-        Self::register(actor, "RootActor");
+        Self::register(actor, self.root_actor.address.clone());
     }
 
 }
@@ -100,8 +109,7 @@ impl Actor for MyActor {
     }
 
     fn handle(&mut self, envelope: Envelope) {
-        println!("Parent Address of MyActor {}", self.get_context().parent_address.unwrap());
-        println!("Message: {} from: {}", envelope.message, envelope.sender_address);
+        println!("Message: {}", envelope.message);
     }
 
 }
@@ -112,5 +120,6 @@ fn main() {
     });
     let mut my_actor = MyActor{ context: ActorContext::new() };
     system.spawn(&mut my_actor);
-    my_actor.handle(Envelope { message: "Test", sender_address: "Outside world" });
+    let (outside_world_address, outside_world_mailbox) = channel();
+    my_actor.handle(Envelope { message: "Test", sender_address: outside_world_address });
 }
