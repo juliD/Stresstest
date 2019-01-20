@@ -1,0 +1,5 @@
+master_socket = "127.0.0.1:3000"
+hosts = "127.0.0.1:3000,192.168.1.1:3000"
+target = "1.1.1.1:12345"
+requests = 10
+interval_milliseconds = 500

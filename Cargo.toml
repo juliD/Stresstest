@@ -7,3 +7,7 @@ edition = "2018"
 [dependencies]
 tokio = "*"
 futures = "*"
+bytes = "0.4.11"
+config = "0.9.2"
+serde_json = "1.0.36"
+tokio-serde-json = "0.2.0"
