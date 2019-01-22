@@ -1,9 +1,9 @@
 extern crate tokio;
 extern crate futures;
 
-use futures::{stream, Future, Stream, Sink};
+use futures::{stream, Future, Stream, Sink, Async};
 use futures::future::lazy;
-use futures::sync::mpsc::{Sender, channel};
+use futures::sync::mpsc::{Receiver, Sender, channel};
 
 type Message = &'static str;
 type Address = Sender<Envelope>;
@@ -18,6 +18,7 @@ pub struct Envelope {
 #[derive(Default)]
 pub struct ActorContext {
     parent_address: Option<Address>,
+    mailbox: Option<Receiver<Envelope>>
 }
 
 impl ActorContext {
@@ -41,8 +42,7 @@ pub trait Actor {
 
 struct RootActor {
     context: ActorContext,
-    address: Address,
-    children: Vec<Box<dyn Actor>>
+    address: Address
 }
 
 impl Actor for RootActor {
@@ -52,14 +52,16 @@ impl Actor for RootActor {
     }
 
     fn handle(&mut self, envelope: Envelope) {
-        println!("Initialized root actor");
+        println!("Calling handle of root actor");
+        println!("RootActor got envelope with message {}", envelope.message);
     }
 
 }
 
 pub struct RunSystem {
 
-    root_actor: RootActor
+    root_actor: RootActor,
+    run_system_address: Sender<Envelope>
 
 }
 
@@ -67,37 +69,55 @@ pub struct RunSystem {
 impl RunSystem {
 
     pub fn new() -> RunSystem {
-
-        // TODO: save mailbox of root actor somewhere
-        let (root_actor_address, root_actor_mailbox) = channel(MAILBOX_SIZE);
+        println!("Initializing RunSystem");
+        let root_actor = Self::init_root_actor();
+        let (run_system_address, _run_system_mailbox) = channel(MAILBOX_SIZE);
         let mut run_system = RunSystem {
-            root_actor : RootActor { 
-                context: ActorContext::new(),
-                address: root_actor_address,
-                children: vec![]
-            }
+            root_actor: root_actor,
+            run_system_address: run_system_address
         };
-        run_system.init();
+        run_system.register_root_actor();
         run_system
-
     }
 
-    fn init(&mut self) {
-        let (run_system_address, run_system_mailbox) = channel(MAILBOX_SIZE);
-        Self::register(&mut self.root_actor, run_system_address.clone());
-        let envelope = Envelope {
-            message: "Get the party started",
-            sender_address: run_system_address
+    fn init_root_actor() -> RootActor {
+        println!("Initializing RootActor");
+        // TODO: save root_actor_mailbox to root actor
+        let (root_actor_address, root_actor_mailbox) = channel(MAILBOX_SIZE);
+        let mut root_actor = RootActor { 
+            context: ActorContext::new(),
+            address: root_actor_address
         };
-        self.root_actor.handle(envelope);
+        root_actor.context.mailbox = Some(root_actor_mailbox);
+        root_actor
     }
 
-    pub fn start(& self) {
-        tokio::run(lazy(|| {
+    fn register_root_actor(&mut self) {
+        println!("Registering RootActor");
+        Self::register(&mut self.root_actor, self.run_system_address.clone());
+    }
 
+    pub fn start<F>(self, f: F) where F: FnOnce() + Send + 'static {
+        println!("Starting system");
+        tokio::run(lazy(move|| {
 
+                f();
+                let envelope = Envelope {
+                    message: "Get the party started",
+                    sender_address: self.run_system_address
+                };
 
+                let root_actor_address = self.root_actor.address.clone();
+                let mut root_actor_mailbox = self.root_actor.context.mailbox.unwrap();
 
+                tokio::spawn(lazy(move|| {
+                    root_actor_address.send(envelope).wait().expect("Some error while sending StartMessage");
+                        
+                    while let Ok(Async::Ready(Some(v))) = root_actor_mailbox.poll() {
+                        println!("stream: {}", v.message);
+                    }
+                    Ok(())
+                }));
 
             Ok(())
         }));
@@ -106,12 +126,6 @@ impl RunSystem {
     fn register<A>(actor: &mut A, parent_address: Address) where A: Actor {
         let mut context = actor.get_context();
         context.parent_address = Some(parent_address);
-    }
-
-    pub fn register_root<A: 'static>(&mut self, mut actor: A) where A: Actor {
-        let mut context = actor.get_context();
-        context.parent_address = Some(self.root_actor.address.clone());
-        self.root_actor.children.push(Box::new(actor));
     }
 
 }
@@ -132,9 +146,17 @@ impl Actor for MyActor {
 
 }
 
+impl MyActor {
+    pub fn test(self) {
+        println!("Test function");
+    }
+}
+
 fn main() {
-    let mut system = RunSystem::new();
+    let system = RunSystem::new();
     let my_actor = MyActor{ context: ActorContext::new() };
-    system.register_root(my_actor);
-    system.start();
+    system.start(move|| {
+        println!("Inside RunSystem user-defined closure");
+        my_actor.test();
+    });
 }
