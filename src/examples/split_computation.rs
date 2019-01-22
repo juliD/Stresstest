@@ -22,7 +22,7 @@ impl ComputingNode {
     }
 }
 impl Actor for ComputingNode {
-    fn handle(&mut self, message: Message, context: Context) {
+    fn handle(&mut self, message: Message) {
         println!("ComputingNode received a message: {}", message.payload);
 
         let mut split = message.payload.splitn(3, " ");
@@ -48,13 +48,13 @@ impl Actor for ComputingNode {
 
 pub fn run() {
     println!("init");
-    Context::start_system(|context: Context| {
+    Router::start(|| {
         let nodes = vec![
-            context.register_actor(ComputingNode::new()),
-            context.register_actor(ComputingNode::new()),
-            context.register_actor(ComputingNode::new()),
-            context.register_actor(ComputingNode::new()),
-            context.register_actor(ComputingNode::new()),
+            Router::register_actor(ComputingNode::new()),
+            Router::register_actor(ComputingNode::new()),
+            Router::register_actor(ComputingNode::new()),
+            Router::register_actor(ComputingNode::new()),
+            Router::register_actor(ComputingNode::new()),
         ];
 
         Dispatcher::run_background(move || {

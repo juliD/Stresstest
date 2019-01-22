@@ -24,12 +24,12 @@ impl SpawningActor {
     }
 }
 impl Actor for SpawningActor {
-    fn handle(&mut self, message: Message, context: Context) {
+    fn handle(&mut self, message: Message) {
         println!("SpawningActor received a message: {}", message.payload);
 
         if message.payload == "Spawn" {
             self.child_id_counter += 1;
-            let child_addr = context.register_actor(ChildActor {
+            let child_addr = Router::register_actor(ChildActor {
                 id: self.child_id_counter,
             });
             self.children.push_front(child_addr.clone());
@@ -49,7 +49,7 @@ struct ChildActor {
     id: u32,
 }
 impl Actor for ChildActor {
-    fn handle(&mut self, message: Message, context: Context) {
+    fn handle(&mut self, message: Message) {
         println!(
             "ChildActor #{} received message: {}",
             self.id, message.payload
@@ -61,7 +61,7 @@ struct ForwardingActor {
     target: Address,
 }
 impl Actor for ForwardingActor {
-    fn handle(&mut self, message: Message, context: Context) {
+    fn handle(&mut self, message: Message) {
         println!("ForwardingActor received a message: {}", message.payload);
         self.target.send(message);
     }
@@ -73,11 +73,11 @@ impl Actor for ForwardingActor {
 
 pub fn run() {
     println!("init");
-    Context::start_system(|context: Context| {
+    Router::start(|| {
 
-        let spawning_addr = context.register_actor(SpawningActor::new());
+        let spawning_addr = Router::register_actor(SpawningActor::new());
 
-        let forwarding_addr = context.register_actor(ForwardingActor {
+        let forwarding_addr = Router::register_actor(ForwardingActor {
             target: spawning_addr.clone(),
         });
 
