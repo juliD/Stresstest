@@ -42,7 +42,7 @@ pub trait Actor {
 struct RootActor {
     context: ActorContext,
     address: Address,
-    children: Vec<Box<Actor>>
+    children: Vec<Box<dyn Actor>>
 }
 
 impl Actor for RootActor {
@@ -108,10 +108,10 @@ impl RunSystem {
         context.parent_address = Some(parent_address);
     }
 
-    pub fn register_root<A>(&self, actor: &mut A) where A: Actor {
+    pub fn register_root<A: 'static>(&mut self, mut actor: A) where A: Actor {
         let mut context = actor.get_context();
         context.parent_address = Some(self.root_actor.address.clone());
-        //self.root_actor.children.push(Box::new(actor));
+        self.root_actor.children.push(Box::new(actor));
     }
 
 }
@@ -133,8 +133,8 @@ impl Actor for MyActor {
 }
 
 fn main() {
-    let system = RunSystem::new();
-    let mut my_actor = MyActor{ context: ActorContext::new() };
-    system.register_root(&mut my_actor);
+    let mut system = RunSystem::new();
+    let my_actor = MyActor{ context: ActorContext::new() };
+    system.register_root(my_actor);
     system.start();
 }
