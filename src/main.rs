@@ -7,6 +7,7 @@ use futures::sync::mpsc::{Receiver, Sender, channel};
 
 type Message = &'static str;
 type Address = Sender<Envelope>;
+type Mailbox = Receiver<Envelope>;
 // TODO: put into RunSystem config
 const MAILBOX_SIZE: usize = 1_024;
 
@@ -18,7 +19,7 @@ pub struct Envelope {
 #[derive(Default)]
 pub struct ActorContext {
     parent_address: Option<Address>,
-    mailbox: Option<Receiver<Envelope>>
+    mailbox: Option<Mailbox>
 }
 
 impl ActorContext {
@@ -100,25 +101,23 @@ impl RunSystem {
     pub fn start<F>(self, f: F) where F: FnOnce() + Send + 'static {
         println!("Starting system");
         tokio::run(lazy(move|| {
+            f();
+            let envelope = Envelope {
+                message: "Get the party started",
+                sender_address: self.run_system_address
+            };
+            Self::send_envelope_async(envelope, self.root_actor.address, self.root_actor.context.mailbox.unwrap());
+            Ok(())
+        }));
+    }
 
-                f();
-                let envelope = Envelope {
-                    message: "Get the party started",
-                    sender_address: self.run_system_address
-                };
-
-                let root_actor_address = self.root_actor.address.clone();
-                let mut root_actor_mailbox = self.root_actor.context.mailbox.unwrap();
-
-                tokio::spawn(lazy(move|| {
-                    root_actor_address.send(envelope).wait().expect("Some error while sending StartMessage");
-                        
-                    while let Ok(Async::Ready(Some(v))) = root_actor_mailbox.poll() {
-                        println!("stream: {}", v.message);
-                    }
-                    Ok(())
-                }));
-
+    fn send_envelope_async(envelope: Envelope, address: Address, mut mailbox: Mailbox) {
+        tokio::spawn(lazy(move|| {
+            address.send(envelope).wait().expect("Some error while sending StartMessage");
+                
+            while let Ok(Async::Ready(Some(v))) = mailbox.poll() {
+                println!("stream: {}", v.message);
+            }
             Ok(())
         }));
     }
