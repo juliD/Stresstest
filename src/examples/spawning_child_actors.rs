@@ -14,12 +14,14 @@ use actor_model::router::*;
 struct SpawningActor {
     children: LinkedList<Address>,
     child_id_counter: u32,
+    context: Option<Context>,
 }
 impl SpawningActor {
     fn new() -> SpawningActor {
         SpawningActor {
             children: LinkedList::new(),
             child_id_counter: 0,
+            context: None,
         }
     }
 }
@@ -29,9 +31,13 @@ impl Actor for SpawningActor {
 
         if message.payload == "Spawn" {
             self.child_id_counter += 1;
-            let child_addr = Router::register_actor(ChildActor {
+            let ctx = match &self.context {
+                Some(c) => c,
+                None => panic!("bla")
+            };
+            let child_addr = ctx.register_actor(ChildActor {
                 id: self.child_id_counter,
-            });
+            }, );
             self.children.push_front(child_addr.clone());
             child_addr.send(Message {
                 payload: "Welcome".to_owned(),
@@ -42,6 +48,10 @@ impl Actor for SpawningActor {
                 })
             });
         }
+    }
+
+    fn receive_context(&mut self, context: Context) {
+        self.context = Some(context);
     }
 }
 
@@ -55,6 +65,8 @@ impl Actor for ChildActor {
             self.id, message.payload
         );
     }
+
+    fn receive_context(&mut self, context: Context) { }
 }
 
 struct ForwardingActor {
@@ -65,21 +77,23 @@ impl Actor for ForwardingActor {
         println!("ForwardingActor received a message: {}", message.payload);
         self.target.send(message);
     }
+
+    fn receive_context(&mut self, context: Context) { }
 }
 
 
 
-// messages and spwning child actors
+// messages and spawning child actors
 
 pub fn run() {
     println!("init");
     Router::start(|| {
 
-        let spawning_addr = Router::register_actor(SpawningActor::new());
+        let spawning_addr = Router::register_actor(SpawningActor::new(), None);
 
         let forwarding_addr = Router::register_actor(ForwardingActor {
             target: spawning_addr.clone(),
-        });
+        }, None);
 
         Dispatcher::run_background(move || {
 

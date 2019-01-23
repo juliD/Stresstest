@@ -6,6 +6,7 @@ use std::hash::{Hash, Hasher};
 use tokio::prelude::*;
 
 use crate::message::*;
+use crate::router::*;
 
 pub type ActorId = u64;
 
@@ -26,4 +27,19 @@ impl Address {
 
 pub trait Actor {
     fn handle(&mut self, message: Message);
+    fn receive_context(&mut self, context: Context);
+}
+
+pub struct Context {
+    pub parent_address: Option<Address>,
+    pub own_address: Address,
+}
+impl Context {
+
+    pub fn register_actor<A>(&self, actor: A) -> Address
+    where
+        A: Actor + Send + 'static,
+    {
+        Router::register_actor(actor, self.parent_address.clone())
+    }
 }
