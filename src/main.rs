@@ -1,7 +1,10 @@
-mod examples;
+#[macro_use]
+extern crate lazy_static;
 
+mod application;
+mod examples;
 fn main() {
-    
-    examples::split_computation::run();
+    application::read_config::show();
+    //examples::split_computation::run();
     // examples::spawning_child_actors::run();
 }

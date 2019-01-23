@@ -5,5 +5,8 @@ authors = ["Leon Busse <leon.busse@br.de>"]
 edition = "2018"
 
 [dependencies]
+lazy_static = "*"
 tokio = "*"
 futures = "*"
+config = "*"
+notify = "*"
