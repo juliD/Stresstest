@@ -15,7 +15,7 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn send(&self, message: Message) {
+    pub fn send(&self, message: String) {
         self.sender
             .clone()
             .send_all(stream::once(Ok(Envelope { message: message })))
@@ -25,6 +25,6 @@ impl Address {
 }
 
 pub trait Actor {
-    fn handle(&mut self, message: Message);
+    fn handle(&mut self, message: String);
     fn receive_context(&mut self, context: Context);
 }

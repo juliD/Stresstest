@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::actor::*;
-use crate::dispatcher::Dispatcher;
+use crate::tokio_util::TokioUtil;
 use crate::message::Envelope;
 use crate::context::*;
 
@@ -16,7 +16,7 @@ impl Router {
     where
         F: FnOnce() + 'static + Send,
     {
-        Dispatcher::run_blocking(move || {
+        TokioUtil::run_blocking(move || {
             println!("setting up system");
             f();
             println!("setup done");
@@ -28,7 +28,7 @@ impl Router {
         // run blocking stream to keep system alive
         // println!("run blocking stream to keep system alive");
         // let (_, system_receiver) = channel::<Envelope>(8);
-        // Dispatcher::handle_stream_blocking(system_receiver, move |_| {});
+        // TokioUtil::handle_stream_blocking(system_receiver, move |_| {});
     }
 
     pub fn register_actor<A>(actor: A, parent_address: Option<Address>) -> Address
@@ -52,7 +52,7 @@ impl Router {
         };
         actor_ref.receive_context(context);
 
-        Dispatcher::handle_stream_background(receiver, move |envelope| {
+        TokioUtil::handle_stream_background(receiver, move |envelope| {
             actor_ref.handle(envelope.message);
         });
         child_address

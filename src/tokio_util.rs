@@ -5,8 +5,8 @@ use tokio::prelude::*;
 
 use crate::message::Envelope;
 
-pub struct Dispatcher {}
-impl Dispatcher {
+pub struct TokioUtil {}
+impl TokioUtil {
     pub fn run_blocking<F>(f: F)
     where
         F: FnOnce() + 'static + Send,
