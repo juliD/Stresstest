@@ -10,6 +10,7 @@ use actor_model::actor::*;
 use actor_model::dispatcher::*;
 use actor_model::message::*;
 use actor_model::router::*;
+use actor_model::context::*;
 
 struct SpawningActor {
     children: LinkedList<Address>,
