@@ -36,24 +36,24 @@ impl Router {
     {
         let (sender, receiver) = channel::<Envelope>(16);
 
-        let address = Address { sender: sender };
+        let child_address = Address { sender: sender };
 
         let mut actor_ref = actor;
 
-        let new_parent_address = match parent_address {
+        let parent_address_clone = match parent_address {
             Some(addr) => Some(addr.clone()),
             None => None,
         };
 
         let context = Context {
-            parent_address: new_parent_address,
-            own_address: address.clone(),
+            parent_address: parent_address_clone,
+            own_address: child_address.clone(),
         };
         actor_ref.receive_context(context);
 
         Dispatcher::handle_stream_background(receiver, move |envelope| {
             actor_ref.handle(envelope.message);
         });
-        address
+        child_address
     }
 }

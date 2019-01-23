@@ -40,6 +40,6 @@ impl Context {
     where
         A: Actor + Send + 'static,
     {
-        Router::register_actor(actor, self.parent_address.clone())
+        Router::register_actor(actor, Some(self.own_address.clone()))
     }
 }
