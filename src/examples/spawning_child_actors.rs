@@ -7,10 +7,10 @@ use std::thread;
 use std::time::Duration;
 
 use actor_model::actor::*;
+use actor_model::context::*;
 use actor_model::dispatcher::*;
 use actor_model::message::*;
 use actor_model::router::*;
-use actor_model::context::*;
 
 struct SpawningActor {
     children: LinkedList<Address>,
@@ -32,10 +32,7 @@ impl Actor for SpawningActor {
 
         if message.payload == "Spawn" {
             self.child_id_counter += 1;
-            let ctx = match &self.context {
-                Some(c) => c,
-                None => panic!("bla"),
-            };
+            let ctx: &Context = self.context.as_ref().expect("");
             let child_addr = ctx.register_actor(ChildActor {
                 id: self.child_id_counter,
                 context: None,
@@ -69,14 +66,8 @@ impl Actor for ChildActor {
         );
 
         if message.payload == "A new sibling arrived" {
-            let ctx = match &self.context {
-                Some(c) => c,
-                None => panic!("bla"),
-            };
-            let paddr = match &ctx.parent_address {
-                Some(a) => a,
-                None => panic!("bla"),
-            };
+            let ctx: &Context = self.context.as_ref().expect("");
+            let paddr: &Address = ctx.parent_address.as_ref().expect("");
             paddr.send(Message {
                 payload: "Wooohoooo".to_owned(),
             })
