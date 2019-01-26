@@ -7,20 +7,20 @@ use tokio::prelude::*;
 use crate::message::*;
 use crate::context::*;
 
-pub type ActorId = u64;
-
 #[derive(Clone)]
 pub struct Address {
     pub sender: Sender<Envelope>,
 }
 
+// TODO: handle panic that send() can cause
+// TODO: Is there a way to handle a future returned from this method and therefore be able to
+// remove the wait()?
 impl Address {
     pub fn send(&self, message: String) {
-        self.sender
+         self.sender
             .clone()
-            .send_all(stream::once(Ok(Envelope { message: message })))
-            .wait()
-            .ok();
+            .send(Envelope { message: message })
+            .wait();
     }
 }
 
