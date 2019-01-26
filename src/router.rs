@@ -1,8 +1,6 @@
 extern crate futures;
 
 use futures::sync::mpsc::*;
-use std::thread;
-use std::time::Duration;
 
 use crate::actor::*;
 use crate::tokio_util::TokioUtil;

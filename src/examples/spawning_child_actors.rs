@@ -10,7 +10,6 @@ use std::time::Duration;
 use actor_model::actor::*;
 use actor_model::context::*;
 use actor_model::tokio_util::*;
-use actor_model::message::*;
 use actor_model::router::*;
 use actor_model::address::*;
 
@@ -84,7 +83,7 @@ impl Actor for ForwardingActor {
         self.target.send(message);
     }
 
-    fn receive_context(&mut self, context: Context) {}
+    fn receive_context(&mut self, _context: Context) {}
 }
 
 // messages and spawning child actors

@@ -16,6 +16,7 @@ pub struct Address {
 // TODO: Is there a way to handle a future returned from this method and therefore be able to
 // remove the wait()?
 // TODO: Can we get around this clone()?
+// TODO: wait() returns a result -> can contain an error. How should that error be handled?
 impl Address {
     pub fn send(&self, message: String) {
          self.sender
