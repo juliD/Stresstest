@@ -6,11 +6,13 @@ use std::collections::LinkedList;
 use std::thread;
 use std::time::Duration;
 
+// TODO: Just import actor_model::*?
 use actor_model::actor::*;
 use actor_model::context::*;
 use actor_model::tokio_util::*;
 use actor_model::message::*;
 use actor_model::router::*;
+use actor_model::address::*;
 
 struct SpawningActor {
     children: LinkedList<Address>,
