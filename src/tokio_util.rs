@@ -5,6 +5,8 @@ use tokio::prelude::*;
 
 use crate::message::Envelope;
 
+// TODO: Less code duplication by returning futures from a util function?
+
 pub struct TokioUtil {}
 impl TokioUtil {
     pub fn run_blocking<F>(f: F)
@@ -25,17 +27,27 @@ impl TokioUtil {
         }));
     }
 
-    pub fn handle_stream_blocking<F>(receiver: Receiver<Envelope>, f: F)
+    // TODO: remove as this function is never called
+    /* pub fn handle_stream_blocking<F>(receiver: Receiver<Envelope>, mut f: F)
     where
         F: FnMut(Envelope) + 'static + Send,
     {
-        tokio::run(receiver.map(f).collect().then(|_| Ok(())));
-    }
+        // TODO: Is the new solution better than the old one? Not sure, had to add the "mut" above ...
+        // tokio::run(receiver.map(f).collect().then(|_| Ok(())));
+        tokio::run(receiver.for_each(move |msg: Envelope| {
+            Ok(f(msg))
+        }));
+    } */
 
-    pub fn handle_stream_background<F>(receiver: Receiver<Envelope>, f: F)
+    pub fn handle_stream_background<F>(receiver: Receiver<Envelope>, mut f: F)
     where
         F: FnMut(Envelope) + 'static + Send,
     {
-        tokio::spawn(receiver.map(f).collect().then(|_| Ok(())));
+        // TODO: Is the new solution better than the old one? Not sure, had to add the "mut" above ...
+        tokio::spawn(receiver.for_each(move |msg: Envelope| {
+            f(msg);
+            Ok(())
+        }));
+        // tokio::spawn(receiver.map(f).collect().then(|_| Ok(())));
     }
 }
