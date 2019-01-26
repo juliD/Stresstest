@@ -20,9 +20,6 @@ impl Router {
             println!("setting up system");
             f();
             println!("setup done");
-            loop {
-                thread::sleep(Duration::from_millis(100))
-            }
         });
 
         // run blocking stream to keep system alive
