@@ -3,6 +3,7 @@ extern crate futures;
 extern crate serde_json;
 extern crate tokio;
 extern crate tokio_serde_json;
+extern crate bytes;
 
 use futures::{Future, Stream};
 use serde_json::Value;
@@ -13,12 +14,15 @@ use tokio::{
 use tokio_serde_json::ReadJson;
 
 use std::collections::LinkedList;
+use std::str::from_utf8;
+use bytes::BytesMut;
 
 // TODO: Just import actor_model::*?
 use actor_model::actor::*;
 use actor_model::address::*;
 use actor_model::context::*;
 use actor_model::router::*;
+use actor_model::tokio_util::*;
 
 struct SpawningActor {
     children: LinkedList<Address>,
@@ -92,31 +96,20 @@ pub fn run() {
             listener
                 .incoming()
                 .for_each(move |socket| {
-
+                    println!("new socket");
                     let spawning_addr_clone = spawning_addr.clone();
 
                     // Delimit frames using a length header
                     let length_delimited = FramedRead::new(socket, LengthDelimitedCodec::new());
-                    // Deserialize frames
-                    let deserialized = ReadJson::<_, Value>::new(length_delimited)
-                        .map_err(|e| println!("ERR: {:?}", e));
-                    // Spawn a task that prints all received messages to STDOUT
-                    tokio::spawn(deserialized.for_each(move |msg| {
-                        println!("GOT: {:?}", msg);
-                        println!(
-                            "{:?}",
-                            msg.as_object()
-                                .unwrap()
-                                .get("root")
-                                .unwrap()
-                                .as_str()
-                                .unwrap()
-                        );
-
-                        spawning_addr_clone.send("Spawn".to_owned());
-
-                        Ok(())
-                    }));
+                    tokio::spawn(
+                        length_delimited
+                            .for_each(|msg: BytesMut| {
+                                let string = from_utf8(&(*msg)).unwrap();
+                                println!("new message: {:?}", string);
+                                Ok(())
+                            })
+                            .map_err(|err| {}),
+                    );
                     Ok(())
                 })
                 .map_err(|_| ()),
