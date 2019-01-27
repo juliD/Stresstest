@@ -24,12 +24,6 @@ impl Router {
             f();
             println!("{}", SYSTEM_STARTUP_FINISHED_MESSAGE);
         });
-
-        // TODO: remove?
-        // run blocking stream to keep system alive
-        // println!("run blocking stream to keep system alive");
-        // let (_, system_receiver) = channel::<Envelope>(8);
-        // TokioUtil::handle_stream_blocking(system_receiver, move |_| {});
     }
 
     pub fn register_actor<A>(mut actor: A, parent_address: Option<Address>) -> Address
