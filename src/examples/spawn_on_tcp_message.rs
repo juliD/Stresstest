@@ -1,11 +1,12 @@
 extern crate actor_model;
+extern crate bytes;
 extern crate futures;
 extern crate serde_json;
 extern crate tokio;
 extern crate tokio_serde_json;
-extern crate bytes;
 
 use futures::{Future, Stream};
+use serde_json::de::*;
 use serde_json::Value;
 use tokio::{
     codec::{FramedRead, LengthDelimitedCodec},
@@ -13,9 +14,9 @@ use tokio::{
 };
 use tokio_serde_json::ReadJson;
 
+use bytes::BytesMut;
 use std::collections::LinkedList;
 use std::str::from_utf8;
-use bytes::BytesMut;
 
 // TODO: Just import actor_model::*?
 use actor_model::actor::*;
@@ -38,23 +39,28 @@ impl SpawningActor {
         }
     }
 }
+
 impl Actor for SpawningActor {
     fn handle(&mut self, message: String) {
         println!("SpawningActor received a message: {}", message);
+        let json: Value = from_str(message.as_str()).unwrap();
+        println!("SpawningActor received a json: {:?}", &json);
+        let command = json["command"].as_str().unwrap();
+        println!("command: {}", command);
 
-        if message == "Spawn" {
-            self.child_id_counter += 1;
-            let ctx: &Context = self.context.as_ref().expect("");
-            let child_addr = ctx.register_actor(ChildActor {
-                id: self.child_id_counter,
-                context: None,
-            });
-            self.children.push_front(child_addr.clone());
-            child_addr.send("Welcome".to_owned());
-            self.children
-                .iter()
-                .for_each(|child| child.send("A new sibling arrived".to_owned()));
-        }
+        // if message == "Spawn" {
+        //     self.child_id_counter += 1;
+        //     let ctx: &Context = self.context.as_ref().expect("");
+        //     let child_addr = ctx.register_actor(ChildActor {
+        //         id: self.child_id_counter,
+        //         context: None,
+        //     });
+        //     self.children.push_front(child_addr.clone());
+        //     child_addr.send("Welcome".to_owned());
+        //     self.children
+        //         .iter()
+        //         .for_each(|child| child.send("A new sibling arrived".to_owned()));
+        // }
     }
 
     fn receive_context(&mut self, context: Context) {
@@ -103,9 +109,10 @@ pub fn run() {
                     let length_delimited = FramedRead::new(socket, LengthDelimitedCodec::new());
                     tokio::spawn(
                         length_delimited
-                            .for_each(|msg: BytesMut| {
+                            .for_each(move |msg: BytesMut| {
                                 let string = from_utf8(&(*msg)).unwrap();
                                 println!("new message: {:?}", string);
+                                spawning_addr_clone.send(string.to_owned());
                                 Ok(())
                             })
                             .map_err(|err| {}),
