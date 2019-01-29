@@ -6,11 +6,10 @@ use std::collections::LinkedList;
 use std::thread;
 use std::time::Duration;
 
-// TODO: Just import actor_model::*?
 use actor_model::actor::*;
 use actor_model::context::*;
 use actor_model::tokio_util::*;
-use actor_model::router::*;
+use actor_model::actor_system::*;
 use actor_model::address::*;
 
 struct SpawningActor {
@@ -90,10 +89,10 @@ impl Actor for ForwardingActor {
 
 pub fn run() {
     println!("init");
-    Router::start(|| {
-        let spawning_addr = Router::register_actor(SpawningActor::new(), None);
+    ActorSystem::start(|| {
+        let spawning_addr = ActorSystem::register_actor(SpawningActor::new(), None);
 
-        let forwarding_addr = Router::register_actor(
+        let forwarding_addr = ActorSystem::register_actor(
             ForwardingActor {
                 target: spawning_addr.clone(),
             },

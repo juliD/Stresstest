@@ -5,7 +5,6 @@ use futures::sync::mpsc::*;
 use tokio::prelude::*;
 
 use crate::message::*;
-use crate::context::*;
 
 #[derive(Clone)]
 pub struct Address {
@@ -19,9 +18,13 @@ pub struct Address {
 // TODO: wait() returns a result -> can contain an error. How should that error be handled?
 impl Address {
     pub fn send(&self, message: String) {
-         self.sender
+         let result = self.sender
             .clone()
             .send(Envelope { message: message })
             .wait();
+        match result {
+            Err(e) => println!("error sending message: {}", e),
+            _ => (),
+        }
     }
 }

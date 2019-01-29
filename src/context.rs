@@ -1,4 +1,4 @@
-use crate::router::*;
+use crate::actor_system::*;
 use crate::actor::*;
 use crate::address::*;
 
@@ -12,6 +12,6 @@ impl Context {
     where
         A: Actor + Send + 'static,
     {
-        Router::register_actor(actor, Some(self.own_address.clone()))
+        ActorSystem::register_actor(actor, Some(self.own_address.clone()))
     }
 }

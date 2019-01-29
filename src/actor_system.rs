@@ -12,9 +12,9 @@ const CHANNEL_BUFFER_SIZE: usize = 1_024;
 const SYSTEM_STARTING_MESSAGE: &str = "setting up system";
 const SYSTEM_STARTUP_FINISHED_MESSAGE: &str = "setup done";
 
-pub struct Router {}
+pub struct ActorSystem {}
 
-impl Router {
+impl ActorSystem {
     pub fn start<F>(f: F)
     where
         F: FnOnce() + 'static + Send,
