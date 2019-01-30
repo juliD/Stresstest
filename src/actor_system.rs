@@ -1,12 +1,14 @@
 extern crate futures;
 
 use futures::sync::mpsc::*;
+use std::sync::mpsc;
 
 use crate::actor::*;
-use crate::tokio_util::TokioUtil;
-use crate::message::Envelope;
-use crate::context::*;
 use crate::address::*;
+use crate::context::*;
+use crate::message::Envelope;
+// use crate::tokio_util::TokioUtil;
+use crate::thread_utils::ThreadUtils;
 
 const CHANNEL_BUFFER_SIZE: usize = 1_024;
 const SYSTEM_STARTING_MESSAGE: &str = "setting up system";
@@ -19,24 +21,19 @@ impl ActorSystem {
     where
         F: FnOnce() + 'static + Send,
     {
-        TokioUtil::run_blocking(move || {
-            println!("{}", SYSTEM_STARTING_MESSAGE);
-            f();
-            println!("{}", SYSTEM_STARTUP_FINISHED_MESSAGE);
-        });
-
-        // TODO: remove?
-        // run blocking stream to keep system alive
-        // println!("run blocking stream to keep system alive");
-        // let (_, system_receiver) = channel::<Envelope>(8);
-        // TokioUtil::handle_stream_blocking(system_receiver, move |_| {});
+        println!("{}", SYSTEM_STARTING_MESSAGE);
+        f();
+        println!("{}", SYSTEM_STARTUP_FINISHED_MESSAGE);
+        loop {
+            // TODO: better solution to keep main thread alive?
+        }
     }
 
     pub fn register_actor<A>(mut actor: A, parent_address: Option<Address>) -> Address
     where
         A: Actor + Send + 'static,
     {
-        let (sender, receiver) = channel::<Envelope>(CHANNEL_BUFFER_SIZE);
+        let (sender, receiver) = mpsc::channel::<Envelope>();
 
         let child_address = Address { sender: sender };
         let parent_address_clone = parent_address.map(|address: Address| address.clone());
@@ -46,10 +43,11 @@ impl ActorSystem {
             own_address: child_address.clone(),
         };
         actor.receive_context(context);
-
-        TokioUtil::handle_stream_background(receiver, move |envelope| {
+        println!("before handle_stream_background");
+        ThreadUtils::handle_stream_background(receiver, move |envelope| {
             actor.handle(envelope.message);
         });
+        println!("after handle_stream_background");
         child_address
     }
 }

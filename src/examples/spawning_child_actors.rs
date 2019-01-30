@@ -9,6 +9,7 @@ use std::time::Duration;
 use actor_model::actor::*;
 use actor_model::context::*;
 use actor_model::tokio_util::*;
+use actor_model::thread_utils::*;
 use actor_model::actor_system::*;
 use actor_model::address::*;
 
@@ -91,7 +92,7 @@ pub fn run() {
     println!("init");
     ActorSystem::start(|| {
         let spawning_addr = ActorSystem::register_actor(SpawningActor::new(), None);
-
+        println!("hallo");
         let forwarding_addr = ActorSystem::register_actor(
             ForwardingActor {
                 target: spawning_addr.clone(),
@@ -99,7 +100,7 @@ pub fn run() {
             None,
         );
 
-        TokioUtil::run_background(move || {
+        ThreadUtils::run_background(move || {
             thread::sleep(Duration::from_millis(1000));
             println!("");
             forwarding_addr.send("Spawn".to_owned());
