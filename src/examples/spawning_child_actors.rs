@@ -12,6 +12,7 @@ use actor_model::address::*;
 use actor_model::context::*;
 use actor_model::message::*;
 use actor_model::tokio_util::*;
+use actor_model::option_chain::*;
 
 struct StringMessage {
     content: String,
@@ -123,7 +124,7 @@ impl Actor for ChildActor {
                 ctx.send(
                     paddr,
                     StringMessage {
-                        content: "Hello parent actor".to_owned(),
+                        content: "That's great".to_owned(),
                     },
                 );
             }
@@ -171,23 +172,6 @@ impl Actor for ForwardingActor {
 
     fn receive_context(&mut self, context: Context) {
         self.context = Some(context);
-    }
-}
-
-trait ChainMatch {
-    fn apply<F>(self, f: F) -> Option<Box<Message>>
-    where
-        F: FnMut(Box<Message>) -> Option<Box<Message>>;
-}
-impl ChainMatch for Option<Box<Message>> {
-    fn apply<F>(self, mut f: F) -> Option<Box<Message>>
-    where
-        F: FnMut(Box<Message>) -> Option<Box<Message>>,
-    {
-        if self.is_some() {
-            return f(self.unwrap());
-        }
-        None
     }
 }
 
