@@ -2,6 +2,7 @@ extern crate actor_model;
 extern crate futures;
 extern crate tokio;
 
+use std::any::{Any, TypeId};
 use std::collections::LinkedList;
 use std::thread;
 use std::time::Duration;
@@ -18,6 +19,11 @@ struct StringMessage {
 }
 impl Message for StringMessage {}
 
+struct SpawnMessage {
+    count: u32,
+}
+impl Message for SpawnMessage {}
+
 struct SpawningActor {
     children: LinkedList<Address>,
     child_id_counter: u32,
@@ -31,15 +37,43 @@ impl SpawningActor {
             context: None,
         }
     }
+
+    fn spawn_child(&mut self) {
+        let ctx: &Context = self.context.as_ref().expect("");
+
+        self.child_id_counter += 1;
+        let child_addr = ctx.register_actor(ChildActor {
+            id: self.child_id_counter,
+            context: None,
+        });
+        self.children.push_front(child_addr.clone());
+        ctx.send(
+            &child_addr,
+            StringMessage {
+                content: "Welcome".to_owned(),
+            },
+        );
+    }
 }
 impl Actor for SpawningActor {
     fn handle(&mut self, message: Box<Message>, origin_address: Option<Address>) {
-        if let Ok(string_msg) = message.downcast::<StringMessage>() {
-            let content = string_msg.content;
-            println!("SpawningActor received a message: {}", content);
+        let message1: Option<Box<Message>> = match message.downcast::<SpawnMessage>() {
+            Ok(spawn_msg) => {
+                let count = spawn_msg.count;
+                println!("SpawningActor spawning {} children", count);
 
-            if content == "Spawn" {
+                self.spawn_child();
+
                 let ctx: &Context = self.context.as_ref().expect("");
+
+                self.children.iter().for_each(|child| {
+                    ctx.send(
+                        &child,
+                        StringMessage {
+                            content: "A new sibling arrived".to_owned(),
+                        },
+                    )
+                });
 
                 if let Some(addr) = origin_address {
                     ctx.send(
@@ -49,28 +83,13 @@ impl Actor for SpawningActor {
                         },
                     );
                 }
-
-                self.child_id_counter += 1;
-                let child_addr = ctx.register_actor(ChildActor {
-                    id: self.child_id_counter,
-                    context: None,
-                });
-                self.children.push_front(child_addr.clone());
-                ctx.send(
-                    &child_addr,
-                    StringMessage {
-                        content: "Welcome".to_owned(),
-                    },
-                );
-                self.children.iter().for_each(|child| {
-                    ctx.send(
-                        &child,
-                        StringMessage {
-                            content: "A new sibling arrived".to_owned(),
-                        },
-                    )
-                });
+                None
             }
+            Err(msg) => Some(msg),
+        };
+
+        if let Some(_) = message1 {
+            println!("SpawningActor received unknown Message");
         }
     }
 
@@ -113,22 +132,58 @@ struct ForwardingActor {
 }
 impl Actor for ForwardingActor {
     fn handle(&mut self, message: Box<Message>, _origin_address: Option<Address>) {
-        if let Ok(string_msg) = message.downcast::<StringMessage>() {
-            let content = string_msg.content;
-            let ctx: &Context = self.context.as_ref().expect("");
-            match content.as_ref() {
-                "Ok" => println!("ForwardingActor got a confirmation"),
-                _ => {
-                    println!("ForwardingActor forwarding: {}", content);
-                    ctx.send(&self.target, StringMessage { content: content });
-                },
+        let ctx: &Context = self.context.as_ref().expect("");
+
+        let message1: Option<Box<Message>> = match message.downcast::<StringMessage>() {
+            Ok(string_msg) => {
+                let content = string_msg.content;
+                match content.as_ref() {
+                    "Ok" => println!("ForwardingActor got a confirmation"),
+                    _ => {
+                        println!("ForwardingActor forwarding StringMessage: {}", content);
+                        ctx.send(&self.target, StringMessage { content: content });
+                    }
+                };
+                None
+            }
+            Err(msg) => Some(msg),
+        };
+
+        let message2: Option<Box<Message>> = apply(message1, |msg| {
+            let r: Option<Box<Message>> = match msg.downcast::<SpawnMessage>() {
+                Ok(spawn_msg) => {
+                    let count = spawn_msg.count;
+                    println!("ForwardingActor forwarding SpawnMessage");
+                    ctx.send(&self.target, SpawnMessage { count: count });
+                    None
+                }
+                Err(msg) => Some(msg),
             };
-        }
+            r
+        });
     }
 
     fn receive_context(&mut self, context: Context) {
         self.context = Some(context);
     }
+}
+
+fn apply<F>(message: Option<Box<Message>>, f: F) -> Option<Box<Message>>
+where
+    F: Fn(Box<Message>) -> Option<Box<Message>>,
+{
+    if (message.is_some()) {
+        return f(message.unwrap());
+    }
+    None
+}
+
+fn is<T: ?Sized + Any>(_s: &T, type_id: TypeId) -> bool where {
+    TypeId::of::<T>() == type_id
+}
+
+fn is_spawnmessage<T: ?Sized + Any>(_s: &T) -> bool where {
+    TypeId::of::<T>() == TypeId::of::<SpawnMessage>()
 }
 
 // messages and spawning child actors
@@ -165,10 +220,5 @@ pub fn run() {
 }
 
 fn send_spawn_command(addr: &Address) {
-    addr.send(
-        StringMessage {
-            content: "Spawn".to_owned(),
-        },
-        None,
-    );
+    addr.send(SpawnMessage { count: 1 }, None);
 }
