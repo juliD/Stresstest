@@ -2,7 +2,6 @@ extern crate actor_model;
 extern crate futures;
 extern crate tokio;
 
-use std::any::{Any, TypeId};
 use std::collections::LinkedList;
 use std::thread;
 use std::time::Duration;
@@ -57,40 +56,50 @@ impl SpawningActor {
 }
 impl Actor for SpawningActor {
     fn handle(&mut self, message: Box<Message>, origin_address: Option<Address>) {
-        let message1: Option<Box<Message>> = match message.downcast::<SpawnMessage>() {
-            Ok(spawn_msg) => {
-                let count = spawn_msg.count;
-                println!("SpawningActor spawning {} children", count);
 
-                self.spawn_child();
+        Some(message)
+            .apply(|m: Box<Message>| match m.downcast::<SpawnMessage>() {
+                Ok(spawn_msg) => {
+                    let count = spawn_msg.count;
+                    println!("SpawningActor spawning {} children", count);
 
-                let ctx: &Context = self.context.as_ref().expect("");
+                    self.spawn_child();
 
-                self.children.iter().for_each(|child| {
-                    ctx.send(
-                        &child,
-                        StringMessage {
-                            content: "A new sibling arrived".to_owned(),
-                        },
-                    )
-                });
+                    let ctx: &Context = self.context.as_ref().expect("");
 
-                if let Some(addr) = origin_address {
-                    ctx.send(
-                        &addr,
-                        StringMessage {
-                            content: "Ok".to_owned(),
-                        },
-                    );
+                    self.children.iter().for_each(|child| {
+                        ctx.send(
+                            &child,
+                            StringMessage {
+                                content: "A new sibling arrived".to_owned(),
+                            },
+                        )
+                    });
+
+                    if let Some(addr) = &origin_address {
+                        ctx.send(
+                            &addr,
+                            StringMessage {
+                                content: "Ok".to_owned(),
+                            },
+                        );
+                    }
+                    None
                 }
+                Err(msg) => Some(msg),
+            })
+            .apply(|m: Box<Message>| match m.downcast::<StringMessage>() {
+                Ok(spawn_msg) => {
+                    let content = spawn_msg.content;
+                println!("SpawningActor received StringMessage: {}", content);
+                    None
+                },
+                Err(msg) => Some(msg)
+            })
+            .apply(|_m: Box<Message>| {
+                println!("SpawningActor received unknown Message");
                 None
-            }
-            Err(msg) => Some(msg),
-        };
-
-        if let Some(_) = message1 {
-            println!("SpawningActor received unknown Message");
-        }
+            });
     }
 
     fn receive_context(&mut self, context: Context) {
@@ -114,7 +123,7 @@ impl Actor for ChildActor {
                 ctx.send(
                     paddr,
                     StringMessage {
-                        content: "Wooohoooo".to_owned(),
+                        content: "Hello parent actor".to_owned(),
                     },
                 );
             }
@@ -134,23 +143,22 @@ impl Actor for ForwardingActor {
     fn handle(&mut self, message: Box<Message>, _origin_address: Option<Address>) {
         let ctx: &Context = self.context.as_ref().expect("");
 
-        let message1: Option<Box<Message>> = match message.downcast::<StringMessage>() {
-            Ok(string_msg) => {
-                let content = string_msg.content;
-                match content.as_ref() {
-                    "Ok" => println!("ForwardingActor got a confirmation"),
-                    _ => {
-                        println!("ForwardingActor forwarding StringMessage: {}", content);
-                        ctx.send(&self.target, StringMessage { content: content });
-                    }
-                };
-                None
-            }
-            Err(msg) => Some(msg),
-        };
-
-        let message2: Option<Box<Message>> = apply(message1, |msg| {
-            let r: Option<Box<Message>> = match msg.downcast::<SpawnMessage>() {
+        Some(message)
+            .apply(|m: Box<Message>| match m.downcast::<StringMessage>() {
+                Ok(string_msg) => {
+                    let content = string_msg.content;
+                    match content.as_ref() {
+                        "Ok" => println!("ForwardingActor got a confirmation"),
+                        _ => {
+                            println!("ForwardingActor forwarding StringMessage: {}", content);
+                            ctx.send(&self.target, StringMessage { content: content });
+                        }
+                    };
+                    None
+                }
+                Err(msg) => Some(msg),
+            })
+            .apply(|m: Box<Message>| match m.downcast::<SpawnMessage>() {
                 Ok(spawn_msg) => {
                     let count = spawn_msg.count;
                     println!("ForwardingActor forwarding SpawnMessage");
@@ -158,9 +166,7 @@ impl Actor for ForwardingActor {
                     None
                 }
                 Err(msg) => Some(msg),
-            };
-            r
-        });
+            });
     }
 
     fn receive_context(&mut self, context: Context) {
@@ -168,23 +174,23 @@ impl Actor for ForwardingActor {
     }
 }
 
-fn apply<F>(message: Option<Box<Message>>, f: F) -> Option<Box<Message>>
-where
-    F: Fn(Box<Message>) -> Option<Box<Message>>,
-{
-    if (message.is_some()) {
-        return f(message.unwrap());
+trait ChainMatch {
+    fn apply<F>(self, f: F) -> Option<Box<Message>>
+    where
+        F: FnMut(Box<Message>) -> Option<Box<Message>>;
+}
+impl ChainMatch for Option<Box<Message>> {
+    fn apply<F>(self, mut f: F) -> Option<Box<Message>>
+    where
+        F: FnMut(Box<Message>) -> Option<Box<Message>>,
+    {
+        if self.is_some() {
+            return f(self.unwrap());
+        }
+        None
     }
-    None
 }
 
-fn is<T: ?Sized + Any>(_s: &T, type_id: TypeId) -> bool where {
-    TypeId::of::<T>() == type_id
-}
-
-fn is_spawnmessage<T: ?Sized + Any>(_s: &T) -> bool where {
-    TypeId::of::<T>() == TypeId::of::<SpawnMessage>()
-}
 
 // messages and spawning child actors
 
