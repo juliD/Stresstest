@@ -4,6 +4,7 @@ extern crate tokio;
 use crate::actor_system::*;
 use crate::actor::*;
 use crate::address::*;
+use crate::message::*;
 
 pub struct Context {
     pub parent_address: Option<Address>,
@@ -18,7 +19,7 @@ impl Context {
         ActorSystem::register_actor(actor, Some(self.own_address.clone()))
     }
 
-    pub fn send(&self, address: &Address, message: String) {
+    pub fn send(&self, address: &Address, message: Box<Message>) {
          address.send(message, Some(self.own_address.clone()));
     }
 }

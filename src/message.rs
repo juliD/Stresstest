@@ -1,7 +1,12 @@
+use downcast_rs::Downcast;
+
 use crate::address::*;
 
-#[derive(Clone)]
 pub struct Envelope {
-    pub message: String,
+    pub message: Box<Message>,
     pub origin_address: Option<Address>,
 }
+
+
+pub trait Message: Downcast + Send {}
+impl_downcast!(Message);

@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate downcast_rs;
+
 pub mod message;
 pub mod tokio_util;
 pub mod actor;
