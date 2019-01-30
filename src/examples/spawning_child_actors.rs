@@ -61,7 +61,7 @@ struct ChildActor {
     context: Option<Context>,
 }
 impl Actor for ChildActor {
-    fn handle(&mut self, message: String, _sender: Option<Address>) {
+    fn handle(&mut self, message: String, _origin_address: Option<Address>) {
         println!("ChildActor #{} received message: {}", self.id, message);
 
         if message == "A new sibling arrived" {
@@ -81,7 +81,7 @@ struct ForwardingActor {
     context: Option<Context>,
 }
 impl Actor for ForwardingActor {
-    fn handle(&mut self, message: String, _sender: Option<Address>) {
+    fn handle(&mut self, message: String, _origin_address: Option<Address>) {
         let ctx: &Context = self.context.as_ref().expect("");
         match message.as_ref() {
             "Ok" => println!("ForwardingActor got a confirmation"),

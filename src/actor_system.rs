@@ -48,7 +48,7 @@ impl ActorSystem {
         actor.receive_context(context);
 
         TokioUtil::handle_stream_background(receiver, move |envelope| {
-            actor.handle(envelope.message, envelope.sender);
+            actor.handle(envelope.message, envelope.origin_address);
         });
         child_address
     }
