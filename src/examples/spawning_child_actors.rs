@@ -11,8 +11,8 @@ use actor_model::actor_system::*;
 use actor_model::address::*;
 use actor_model::context::*;
 use actor_model::message::*;
-use actor_model::tokio_util::*;
 use actor_model::option_chain::*;
+use actor_model::tokio_util::*;
 
 struct StringMessage {
     content: String,
@@ -57,14 +57,15 @@ impl SpawningActor {
 }
 impl Actor for SpawningActor {
     fn handle(&mut self, message: Box<Message>, origin_address: Option<Address>) {
-
         Some(message)
             .apply(|m: Box<Message>| match m.downcast::<SpawnMessage>() {
                 Ok(spawn_msg) => {
                     let count = spawn_msg.count;
                     println!("SpawningActor spawning {} children", count);
 
-                    self.spawn_child();
+                    for _i in 0..count {
+                        self.spawn_child();
+                    }
 
                     let ctx: &Context = self.context.as_ref().expect("");
 
@@ -92,10 +93,10 @@ impl Actor for SpawningActor {
             .apply(|m: Box<Message>| match m.downcast::<StringMessage>() {
                 Ok(spawn_msg) => {
                     let content = spawn_msg.content;
-                println!("SpawningActor received StringMessage: {}", content);
+                    println!("SpawningActor received StringMessage: {}", content);
                     None
-                },
-                Err(msg) => Some(msg)
+                }
+                Err(msg) => Some(msg),
             })
             .apply(|_m: Box<Message>| {
                 println!("SpawningActor received unknown Message");
@@ -167,6 +168,10 @@ impl Actor for ForwardingActor {
                     None
                 }
                 Err(msg) => Some(msg),
+            })
+            .apply(|_m: Box<Message>| {
+                println!("ForwardingActor received unknown Message");
+                None
             });
     }
 
@@ -174,7 +179,6 @@ impl Actor for ForwardingActor {
         self.context = Some(context);
     }
 }
-
 
 // messages and spawning child actors
 
@@ -194,21 +198,17 @@ pub fn run() {
         TokioUtil::run_background(move || {
             thread::sleep(Duration::from_millis(1000));
             println!("");
-            send_spawn_command(&forwarding_addr);
+            forwarding_addr.send(SpawnMessage { count: 3 }, None);
             thread::sleep(Duration::from_millis(2000));
             println!("");
-            send_spawn_command(&forwarding_addr);
+            forwarding_addr.send(SpawnMessage { count: 1 }, None);
             thread::sleep(Duration::from_millis(2000));
             println!("");
-            send_spawn_command(&forwarding_addr);
+            forwarding_addr.send(SpawnMessage { count: 2 }, None);
             thread::sleep(Duration::from_millis(2000));
             println!("");
-            send_spawn_command(&forwarding_addr);
+            forwarding_addr.send(SpawnMessage { count: 1 }, None);
         });
     });
     println!("done");
-}
-
-fn send_spawn_command(addr: &Address) {
-    addr.send(SpawnMessage { count: 1 }, None);
 }
