@@ -44,9 +44,9 @@ impl Actor for SpawningActor {
                 if let Some(addr) = origin_address {
                     ctx.send(
                         &addr,
-                        Box::new(StringMessage {
+                        StringMessage {
                             content: "Ok".to_owned(),
-                        }),
+                        },
                     );
                 }
 
@@ -58,16 +58,16 @@ impl Actor for SpawningActor {
                 self.children.push_front(child_addr.clone());
                 ctx.send(
                     &child_addr,
-                    Box::new(StringMessage {
+                    StringMessage {
                         content: "Welcome".to_owned(),
-                    }),
+                    },
                 );
                 self.children.iter().for_each(|child| {
                     ctx.send(
                         &child,
-                        Box::new(StringMessage {
+                        StringMessage {
                             content: "A new sibling arrived".to_owned(),
-                        }),
+                        },
                     )
                 });
             }
@@ -94,9 +94,9 @@ impl Actor for ChildActor {
                 let paddr: &Address = ctx.parent_address.as_ref().expect("");
                 ctx.send(
                     paddr,
-                    Box::new(StringMessage {
+                    StringMessage {
                         content: "Wooohoooo".to_owned(),
-                    }),
+                    },
                 );
             }
         }
@@ -120,7 +120,7 @@ impl Actor for ForwardingActor {
                 "Ok" => println!("ForwardingActor got a confirmation"),
                 _ => {
                     println!("ForwardingActor forwarding: {}", content);
-                    ctx.send(&self.target, Box::new(StringMessage { content: content }));
+                    ctx.send(&self.target, StringMessage { content: content });
                 },
             };
         }
@@ -166,9 +166,9 @@ pub fn run() {
 
 fn send_spawn_command(addr: &Address) {
     addr.send(
-        Box::new(StringMessage {
+        StringMessage {
             content: "Spawn".to_owned(),
-        }),
+        },
         None,
     );
 }
