@@ -2,6 +2,7 @@ extern crate futures;
 
 use futures::sync::mpsc::*;
 use std::sync::mpsc;
+use std::thread;
 
 use crate::actor::*;
 use crate::address::*;
@@ -26,6 +27,7 @@ impl ActorSystem {
         println!("{}", SYSTEM_STARTUP_FINISHED_MESSAGE);
         loop {
             // TODO: better solution to keep main thread alive?
+            thread::sleep_ms(1000);
         }
     }
 
