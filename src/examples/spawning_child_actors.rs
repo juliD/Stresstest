@@ -7,13 +7,16 @@ use std::thread;
 use std::time::Duration;
 
 use actor_model::actor::*;
-use actor_model::context::*;
-use actor_model::thread_utils::*;
 use actor_model::actor_system::*;
 use actor_model::address::*;
 use actor_model::context::*;
+use actor_model::thread_utils::*;
 
-type CustomMessage = String;
+#[derive(Clone)]
+enum CustomMessage {
+    SpawnMessage(u32),
+    StringMessage(String),
+}
 
 struct SpawningActor {
     children: LinkedList<Address<CustomMessage>>,
@@ -28,30 +31,48 @@ impl SpawningActor {
             context: None,
         }
     }
+
+    fn spawn_child(&mut self) {
+        let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
+        self.child_id_counter += 1;
+        let child_addr = ctx.register_actor(ChildActor {
+            id: self.child_id_counter,
+            context: None,
+        });
+        self.children.push_front(child_addr.clone());
+        ctx.send(
+            &child_addr,
+            CustomMessage::StringMessage("Welcome".to_owned()),
+        );
+    }
 }
 impl Actor<CustomMessage> for SpawningActor {
-    fn handle(&mut self, message: String, origin_address: Option<Address<CustomMessage>>) {
-        println!("SpawningActor received a message: {}", message);
-
-        if message == "Spawn" {
-            let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
-
-            if let Some(addr) = origin_address {
-                // println!("SpawningActor received an Ok");
-                ctx.send(&addr, "Ok".to_owned());
+    fn handle(&mut self, message: CustomMessage, origin_address: Option<Address<CustomMessage>>) {
+        match message {
+            CustomMessage::StringMessage(content) => {
+                println!("SpawningActor received a message: {}", content);
             }
+            CustomMessage::SpawnMessage(count) => {
+                println!("SpawningActor spawning {} children", count);
 
-            self.child_id_counter += 1;
-            let child_addr = ctx.register_actor(ChildActor {
-                id: self.child_id_counter,
-                context: None,
-            });
-            self.children.push_front(child_addr.clone());
-            ctx.send(&child_addr, "Welcome".to_owned());
-            self.children
-                .iter()
-                .for_each(|child| ctx.send(child, "A new sibling arrived".to_owned()));
-        }
+                for _i in 0..count {
+                    self.spawn_child();
+                }
+
+                let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
+                self.children.iter().for_each(|child| {
+                    ctx.send(
+                        child,
+                        CustomMessage::StringMessage("A new sibling arrived".to_owned()),
+                    )
+                });
+
+                if let Some(addr) = origin_address {
+                    // println!("SpawningActor received an Ok");
+                    ctx.send(&addr, CustomMessage::StringMessage("Ok".to_owned()));
+                }
+            }
+        };
     }
 
     fn receive_context(&mut self, context: Context<CustomMessage>) {
@@ -64,33 +85,17 @@ struct ChildActor {
     context: Option<Context<CustomMessage>>,
 }
 impl Actor<CustomMessage> for ChildActor {
-    fn handle(&mut self, message: String, _origin_address: Option<Address<CustomMessage>>) {
-        println!("ChildActor #{} received message: {}", self.id, message);
-
-        if message == "A new sibling arrived" {
-            let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
-            let paddr: &Address<CustomMessage> = ctx.parent_address.as_ref().expect("");
-            ctx.send(paddr, "Wooohoooo".to_owned())
-        }
-    }
-
-    fn receive_context(&mut self, context: Context<CustomMessage>) {
-        self.context = Some(context);
-    }
-}
-
-struct ForwardingActor {
-    target: Address<CustomMessage>,
-    context: Option<Context<CustomMessage>>,
-}
-impl Actor<CustomMessage> for ForwardingActor {
     fn handle(&mut self, message: CustomMessage, _origin_address: Option<Address<CustomMessage>>) {
-        let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
-        match message.as_ref() {
-            "Ok" => println!("ForwardingActor got a confirmation"),
-            _ => println!("ForwardingActor forwarding: {}", message),
+        match message {
+            CustomMessage::StringMessage(content) => {
+                if content == "A new sibling arrived" {
+                    let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
+                    let paddr: &Address<CustomMessage> = ctx.parent_address.as_ref().expect("");
+                    ctx.send(paddr, CustomMessage::StringMessage("Wooohoooo".to_owned()));
+                }
+            }
+            _ => {}
         };
-        ctx.send(&self.target, message);
     }
 
     fn receive_context(&mut self, context: Context<CustomMessage>) {
@@ -104,28 +109,20 @@ pub fn run() {
     println!("init");
     ActorSystem::<CustomMessage>::start(|| {
         let spawning_addr = ActorSystem::register_actor(SpawningActor::new(), None);
-        println!("hallo");
-        let forwarding_addr = ActorSystem::register_actor(
-            ForwardingActor {
-                target: spawning_addr.clone(),
-                context: None,
-            },
-            None,
-        );
 
         ThreadUtils::<CustomMessage>::run_background(move || {
             thread::sleep(Duration::from_millis(1000));
             println!("");
-            forwarding_addr.send("Spawn".to_owned(), None);
+            spawning_addr.send(CustomMessage::SpawnMessage(2), None);
             thread::sleep(Duration::from_millis(2000));
             println!("");
-            forwarding_addr.send("Spawn".to_owned(), None);
+            spawning_addr.send(CustomMessage::SpawnMessage(1), None);
             thread::sleep(Duration::from_millis(2000));
             println!("");
-            forwarding_addr.send("Spawn".to_owned(), None);
+            spawning_addr.send(CustomMessage::SpawnMessage(3), None);
             thread::sleep(Duration::from_millis(2000));
             println!("");
-            forwarding_addr.send("Spawn".to_owned(), None);
+            spawning_addr.send(CustomMessage::SpawnMessage(1), None);
         });
     });
     println!("done");

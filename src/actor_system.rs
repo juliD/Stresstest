@@ -45,11 +45,9 @@ impl<M> ActorSystem<M> where M: Clone + Send + 'static {
             own_address: child_address.clone(),
         };
         actor.receive_context(context);
-        println!("before handle_stream_background");
         ThreadUtils::handle_stream_background(receiver, move |envelope: Envelope<M>| {
             actor.handle(envelope.message, envelope.origin_address);
         });
-        println!("after handle_stream_background");
         child_address
     }
 }
