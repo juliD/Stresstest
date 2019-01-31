@@ -1,3 +1,6 @@
+extern crate futures;
+extern crate tokio;
+
 use crate::actor_system::*;
 use crate::actor::*;
 use crate::address::*;
@@ -13,5 +16,9 @@ impl Context {
         A: Actor + Send + 'static,
     {
         ActorSystem::register_actor(actor, Some(self.own_address.clone()))
+    }
+
+    pub fn send(&self, address: &Address, message: String) {
+         address.send(message, Some(self.own_address.clone()));
     }
 }
