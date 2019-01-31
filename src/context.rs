@@ -5,20 +5,20 @@ use crate::actor_system::*;
 use crate::actor::*;
 use crate::address::*;
 
-pub struct Context {
-    pub parent_address: Option<Address>,
-    pub own_address: Address,
+pub struct Context<M> {
+    pub parent_address: Option<Address<M>>,
+    pub own_address: Address<M>,
 }
-impl Context {
+impl<M> Context<M> where M: Clone + Send + 'static {
 
-    pub fn register_actor<A>(&self, actor: A) -> Address
+    pub fn register_actor<A>(&self, actor: A) -> Address<M>
     where
-        A: Actor + Send + 'static,
+        A: Actor<M> + Send + 'static,
     {
         ActorSystem::register_actor(actor, Some(self.own_address.clone()))
     }
 
-    pub fn send(&self, address: &Address, message: String) {
+    pub fn send(&self, address: &Address<M>, message: M) {
          address.send(message, Some(self.own_address.clone()));
     }
 }

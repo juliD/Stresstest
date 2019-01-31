@@ -13,10 +13,12 @@ use actor_model::actor_system::*;
 use actor_model::address::*;
 use actor_model::context::*;
 
+type CustomMessage = String;
+
 struct SpawningActor {
-    children: LinkedList<Address>,
+    children: LinkedList<Address<CustomMessage>>,
     child_id_counter: u32,
-    context: Option<Context>,
+    context: Option<Context<CustomMessage>>,
 }
 impl SpawningActor {
     fn new() -> SpawningActor {
@@ -27,12 +29,12 @@ impl SpawningActor {
         }
     }
 }
-impl Actor for SpawningActor {
-    fn handle(&mut self, message: String, origin_address: Option<Address>) {
+impl Actor<CustomMessage> for SpawningActor {
+    fn handle(&mut self, message: String, origin_address: Option<Address<CustomMessage>>) {
         println!("SpawningActor received a message: {}", message);
 
         if message == "Spawn" {
-            let ctx: &Context = self.context.as_ref().expect("");
+            let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
 
             if let Some(addr) = origin_address {
                 // println!("SpawningActor received an Ok");
@@ -52,38 +54,38 @@ impl Actor for SpawningActor {
         }
     }
 
-    fn receive_context(&mut self, context: Context) {
+    fn receive_context(&mut self, context: Context<CustomMessage>) {
         self.context = Some(context);
     }
 }
 
 struct ChildActor {
     id: u32,
-    context: Option<Context>,
+    context: Option<Context<CustomMessage>>,
 }
-impl Actor for ChildActor {
-    fn handle(&mut self, message: String, _origin_address: Option<Address>) {
+impl Actor<CustomMessage> for ChildActor {
+    fn handle(&mut self, message: String, _origin_address: Option<Address<CustomMessage>>) {
         println!("ChildActor #{} received message: {}", self.id, message);
 
         if message == "A new sibling arrived" {
-            let ctx: &Context = self.context.as_ref().expect("");
-            let paddr: &Address = ctx.parent_address.as_ref().expect("");
+            let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
+            let paddr: &Address<CustomMessage> = ctx.parent_address.as_ref().expect("");
             ctx.send(paddr, "Wooohoooo".to_owned())
         }
     }
 
-    fn receive_context(&mut self, context: Context) {
+    fn receive_context(&mut self, context: Context<CustomMessage>) {
         self.context = Some(context);
     }
 }
 
 struct ForwardingActor {
-    target: Address,
-    context: Option<Context>,
+    target: Address<CustomMessage>,
+    context: Option<Context<CustomMessage>>,
 }
-impl Actor for ForwardingActor {
-    fn handle(&mut self, message: String, _origin_address: Option<Address>) {
-        let ctx: &Context = self.context.as_ref().expect("");
+impl Actor<CustomMessage> for ForwardingActor {
+    fn handle(&mut self, message: CustomMessage, _origin_address: Option<Address<CustomMessage>>) {
+        let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
         match message.as_ref() {
             "Ok" => println!("ForwardingActor got a confirmation"),
             _ => println!("ForwardingActor forwarding: {}", message),
@@ -91,7 +93,7 @@ impl Actor for ForwardingActor {
         ctx.send(&self.target, message);
     }
 
-    fn receive_context(&mut self, context: Context) {
+    fn receive_context(&mut self, context: Context<CustomMessage>) {
         self.context = Some(context);
     }
 }
@@ -100,7 +102,7 @@ impl Actor for ForwardingActor {
 
 pub fn run() {
     println!("init");
-    ActorSystem::start(|| {
+    ActorSystem::<CustomMessage>::start(|| {
         let spawning_addr = ActorSystem::register_actor(SpawningActor::new(), None);
         println!("hallo");
         let forwarding_addr = ActorSystem::register_actor(
@@ -111,7 +113,7 @@ pub fn run() {
             None,
         );
 
-        ThreadUtils::run_background(move || {
+        ThreadUtils::<CustomMessage>::run_background(move || {
             thread::sleep(Duration::from_millis(1000));
             println!("");
             forwarding_addr.send("Spawn".to_owned(), None);
