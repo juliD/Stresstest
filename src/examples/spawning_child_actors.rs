@@ -1,6 +1,4 @@
 extern crate actor_model;
-extern crate futures;
-extern crate tokio;
 
 use std::collections::LinkedList;
 use std::thread;
@@ -75,7 +73,7 @@ impl Actor<CustomMessage> for SpawningActor {
         };
     }
 
-    fn receive_context(&mut self, context: Context<CustomMessage>) {
+    fn start(&mut self, context: Context<CustomMessage>) {
         self.context = Some(context);
     }
 }
@@ -98,8 +96,9 @@ impl Actor<CustomMessage> for ChildActor {
         };
     }
 
-    fn receive_context(&mut self, context: Context<CustomMessage>) {
+    fn start(&mut self, context: Context<CustomMessage>) {
         self.context = Some(context);
+        println!("ChildActor #{} spawned", self.id);
     }
 }
 
@@ -107,10 +106,10 @@ impl Actor<CustomMessage> for ChildActor {
 
 pub fn run() {
     println!("init");
-    ActorSystem::<CustomMessage>::start(|| {
+    ActorSystem::start(|| {
         let spawning_addr = ActorSystem::register_actor(SpawningActor::new(), None);
 
-        ThreadUtils::<CustomMessage>::run_background(move || {
+        ThreadUtils::run_background(move || {
             thread::sleep(Duration::from_millis(1000));
             println!("");
             spawning_addr.send(CustomMessage::SpawnMessage(2), None);

@@ -1,6 +1,3 @@
-extern crate futures;
-extern crate tokio;
-
 use std::sync::mpsc::*;
 
 use crate::message::*;

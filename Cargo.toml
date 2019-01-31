@@ -5,5 +5,3 @@ authors = ["Leon Busse <leon.busse@br.de>"]
 edition = "2018"
 
 [dependencies]
-tokio = "*"
-futures = "*"
