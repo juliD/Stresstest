@@ -1,6 +1,5 @@
 extern crate futures;
 
-use futures::sync::mpsc::*;
 use std::sync::mpsc;
 use std::thread;
 
@@ -11,7 +10,6 @@ use crate::message::Envelope;
 // use crate::tokio_util::TokioUtil;
 use crate::thread_utils::ThreadUtils;
 
-const CHANNEL_BUFFER_SIZE: usize = 1_024;
 const SYSTEM_STARTING_MESSAGE: &str = "setting up system";
 const SYSTEM_STARTUP_FINISHED_MESSAGE: &str = "setup done";
 
@@ -47,7 +45,7 @@ impl ActorSystem {
         actor.receive_context(context);
         println!("before handle_stream_background");
         ThreadUtils::handle_stream_background(receiver, move |envelope| {
-            actor.handle(envelope.message);
+            actor.handle(envelope.message, envelope.origin_address);
         });
         println!("after handle_stream_background");
         child_address

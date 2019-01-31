@@ -2,7 +2,6 @@ extern crate futures;
 extern crate tokio;
 
 use std::sync::mpsc::*;
-use tokio::prelude::*;
 
 use crate::message::*;
 
@@ -20,7 +19,7 @@ impl Address {
     pub fn send(&self, message: String, origin_address: Option<Address>) {
          let result = self.sender
             .clone()
-            .send(Envelope { message: message });
+            .send(Envelope { message: message, origin_address: origin_address });
         match result {
             Err(e) => println!("error sending message: {}", e),
             _ => (),

@@ -8,12 +8,10 @@ use std::time::Duration;
 
 use actor_model::actor::*;
 use actor_model::context::*;
-use actor_model::tokio_util::*;
 use actor_model::thread_utils::*;
 use actor_model::actor_system::*;
 use actor_model::address::*;
 use actor_model::context::*;
-use actor_model::tokio_util::*;
 
 struct SpawningActor {
     children: LinkedList<Address>,
