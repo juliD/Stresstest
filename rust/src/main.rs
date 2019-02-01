@@ -63,6 +63,9 @@ fn main() {
 
 fn enter_child_routine<'a>(universe: &'a mpi::environment::Universe) {
 
+    // ich kriege das universum nicht in den tokio spawn!
+    // halp
+
     tokio::run(futures::lazy(move || {
 
         tokio::spawn(lazy(move || {
