@@ -1,0 +1,11 @@
+[package]
+name = "actor_model"
+version = "0.1.0"
+authors = ["Leon Busse <leon.busse@br.de>"]
+edition = "2018"
+
+[dependencies]
+tokio = "*"
+futures = "*"
+mpi = "0.5"
+hyper = "0.12"
