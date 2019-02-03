@@ -1,4 +1,4 @@
 cargo build
 cd target/debug
-mpirun -np 5 ./actor_model
+mpirun -np 3 ./actor_model
 cd ../..
