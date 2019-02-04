@@ -16,6 +16,7 @@ struct WorkerActor{
     id: u32,
     context: Option<Context>,
     target: hyper::Uri,
+    status: bool,
 }
 impl WorkerActor{
 
@@ -28,32 +29,37 @@ impl Actor for WorkerActor{
 
         match vec[0]{
             "start" =>{
+                if self.status {
+                    self.status = false;
+                    return;
+                }
                 let ctx: &Context = self.context.as_ref().expect("");
-                let paddr: &Address = ctx.parent_address.as_ref().expect("");
-                let own_addr: &Address = &ctx.own_address;
-                for _ in 0..10{
+                let paddr: Address = ctx.parent_address.as_ref().expect("").clone();
+                let own_addr: Address = ctx.own_address.clone();
                 
-                    rt::spawn(rt::lazy(move || {
-                        let client = Client::new();
-                        let uri = "http://httpbin.org/ip".parse().unwrap();
-                        client
-                            .get(uri)
-                            .map(move |res| {
-                                println!("HTTP Response {}", res.status());
-                            })
-                            .map_err(|err| {
-                                println!("Error: {}", err);
-                            })
-                    }));                    
-                    paddr.send("1".to_owned());                    
-                }                
-                own_addr.send("start".to_owned());
+                rt::spawn(rt::lazy(move || {
+                    let client = Client::new();
+                    let uri = "http://httpbin.org/ip".parse().unwrap();
+                    client
+                        .get(uri)
+                        .map(move |res| {
+                            println!("HTTP Response {}", res.status());
+                            paddr.send("1".to_owned());                    
+                               
+                            own_addr.send("start".to_owned());
+                        })
+                        .map_err(|err| {
+                            println!("Error: {}", err);
+                        })
+                }));                    
+                
             }
             "target" =>{
                 self.target = vec[1].parse().unwrap();
             }
             "stop" =>{
                 println!("Stopped");
+                self.status = true;
             }
             _=>{
 
@@ -191,6 +197,7 @@ impl Actor for MasterActor{
                         id: self.child_id_counter,
                         context: None,
                         target: "http://httpbin.org/ip".parse().unwrap(),
+                        status: false,
                     });
             self.children.push_back(child_addr.clone());
         }
