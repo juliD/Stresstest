@@ -4,6 +4,8 @@ services:
   master:
     build: ./docker-image
     container_name: master
+    # networks:
+    #   - mpi
     ports:
       - "2222:22"
     volumes:
@@ -11,12 +13,16 @@ services:
   node:
     build: ./docker-image
     command: ./compose-start.sh
+    # networks:
+    #   - mpi
     volumes_from:
       - master
 
 networks:
   default:
     driver: bridge
+  # mpi:
+  #   external: true
 
 volumes:
   hosts:
