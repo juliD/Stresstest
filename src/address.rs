@@ -2,24 +2,28 @@ use std::sync::mpsc::*;
 
 use crate::message::*;
 
+/// Represents the only way to communicate with the associated actor by sending messages.
+/// The type parameter represents the message type allowed in this `ActorSystem`.
 #[derive(Clone)]
 pub struct Address<M> {
     pub sender: Sender<Envelope<M>>,
 }
 
-// TODO: handle panic that send() can cause
-// TODO: Is there a way to handle a future returned from this method and therefore be able to
-// remove the wait()?
-// TODO: Can we get around this clone()?
-// TODO: wait() returns a result -> can contain an error. How should that error be handled?
 impl<M> Address<M> {
+    /// Sends a message to the mailbox of the actor with this address.
     pub fn send(&self, message: M, origin_address: Option<Address<M>>) {
-         let result = self.sender
-            .clone()
-            .send(Envelope { message: message, origin_address: origin_address });
+        let result = self.sender.clone().send(Envelope {
+            message: message,
+            origin_address: origin_address,
+        });
         match result {
-            Err(e) => println!("error sending message: {}", e),
+            Err(e) => println!("encountered an error sending a message: {}", e),
             _ => (),
         }
+    }
+
+    /// Shorthand for sending a message anonymously.
+    pub fn senda(&self, message: M) {
+        self.send(message, None);
     }
 }

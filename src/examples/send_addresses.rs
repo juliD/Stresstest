@@ -68,7 +68,7 @@ pub fn run() {
     ActorSystem::start(|| {
         let output_actor = ActorSystem::register_actor(OutputActor {}, None);
         let spawning_addr = ActorSystem::register_actor(SpawningActor { context: None }, None);
-        spawning_addr.send(CustomMessage::SpawnMessage(output_actor, 0), None)
+        spawning_addr.senda(CustomMessage::SpawnMessage(output_actor, 0))
     });
     println!("done");
 }
