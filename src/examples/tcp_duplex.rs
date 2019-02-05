@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::str::from_utf8;
 use std::thread;
+use std::io;
 
 pub fn run() {
   let args: Vec<String> = env::args().collect();
@@ -70,7 +71,8 @@ pub fn run() {
           println!("New connection: {}", stream.peer_addr().unwrap());
           thread::spawn(move || {
             // connection succeeded
-            handle_master(stream)
+            // handle_master(stream)
+            handle_master_new(stream);
           });
         }
         Err(e) => {
@@ -101,4 +103,11 @@ fn handle_master(mut stream: TcpStream) {
       false
     }
   } {}
+}
+
+fn handle_master_new(mut conn: TcpStream){
+  let mut buffer = [0; 512];
+  conn.read(&mut buffer).unwrap();
+  let message_as_string = String::from_utf8_lossy(&buffer[..]);
+  println!("got message {}", message_as_string);
 }
