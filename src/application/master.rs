@@ -24,15 +24,15 @@ struct WorkerActor{
     status: bool,
 }
 impl WorkerActor{
-
-}
-
-fn request() -> Result<(), Box<std::error::Error>>{
-    let mut res = reqwest::get("https://www.rust-lang.org/")?;
-    println!("Status = {}", res.status());
+    fn request(&self) -> Result<(), Box<std::error::Error>>{
+    let mut res = reqwest::get(&self.target)?;
+    //println!("Status = {}", res.status());
 
     Ok(())
 }
+}
+
+
 
 impl Actor<String> for WorkerActor{
     fn handle(&mut self, message: String, origin_address: Option<Address<String>>){
@@ -49,9 +49,9 @@ impl Actor<String> for WorkerActor{
                 let paddr = ctx.parent_address.as_ref().expect("");
                 let own_addr = ctx.own_address.clone();
                       
-                request();           
+                self.request();           
                 ctx.send(&paddr, "1".to_string());
-                //ctx.send(&own_addr, "start".to_string());
+                ctx.send(&own_addr, "start".to_string());
             }
             "target" =>{
                 self.target = vec[1].parse().unwrap();
@@ -91,7 +91,6 @@ struct MasterActor{
     child_id_counter: u32,
     context: Option<Context<String>>,
     master: bool,
-    started: bool,
     counter: u64,
 }
 impl MasterActor{
@@ -101,15 +100,27 @@ impl MasterActor{
             child_id_counter: 0,
             context: None,
             master: is_master,
-            started: false,
             counter: 0
         }
     }
-    fn send_slaves(&mut self, message: String){
+    fn send_slaves(&self, message: String){
+        //TODO: send to all known slaves
         match TcpStream::connect("localhost:3333") {
             Ok(mut stream) => {
                 
                 stream.write(message.as_bytes()).unwrap();
+                stream.flush().unwrap();
+            }
+            Err(e) => {
+                println!("Failed to connect: {}", e);
+            }
+        }
+    }
+    fn send_master_count(&self){
+        match TcpStream::connect("localhost:3001") {
+            Ok(mut stream) => {
+                
+                stream.write("1".as_bytes()).unwrap();
                 stream.flush().unwrap();
             }
             Err(e) => {
@@ -148,27 +159,43 @@ fn broadcast_children(ctx: &Context<String>, list: &LinkedList<Address<String>>,
 
 impl Actor<String> for MasterActor{
     fn handle(&mut self, message: String, origin_address: Option<Address<String>>){
-        let mut split = message.split(" ");
-        let vec: Vec<&str> = split.collect();
-        let ctx: &Context<String> = self.context.as_ref().expect("");
         
-        if self.master{
+        let ctx: &Context<String> = self.context.as_ref().expect("");
+
             match message.as_ref() {
                 "1"=>{
-                    self.counter+=1;
-                    println!("counting up {}",self.counter);
+                    if self.master{
+                        self.counter+=1; 
+                    }else{
+                        self.send_master_count();
+                        println!("Sent count");
+                    }
+                                       
                 }
                 "start" => {
-                    
+                    if self.master{
+                        self.counter = 0;
+                        self.send_slaves(message);
+                    } 
+                    else{
+                        println!("Started");
+                    }                   
                     broadcast_children(ctx, &self.children, self.child_id_counter, "start".to_string());
-                    self.send_slaves(message);
+                    
                     
                 }
                 "stop" => {
+                    if self.master{
+                        self.counter = 0;
+                        self.send_slaves(message);
+                    }else{
+                        println!("Stopped");
+                    }
                     broadcast_children(ctx, &self.children, self.child_id_counter, "stop".to_string());
+                    
                 }
                 "log" =>{
-
+                    println!("Requests sent: {}",self.counter);
                 }
                 "target" =>{
                     //TODO:check if target correct
@@ -185,29 +212,14 @@ impl Actor<String> for MasterActor{
                 }
                 _ =>{
                     println!("This is what I got: -{}-",message);
+
                     println!("Not a valid input. Write help to get a list of commands.")
+                    
+
+                    
                 }
             }
-        }
-        else{
-            
-            if message.trim() == "start"{
-                println!("Yaaaaaay -{}-",message.trim());
-            }
-            else{
-                println!("Buuuhhh -{}-",message.trim());
-            }
-            // if self.started{
-            //     broadcast_children(ctx, &self.children, self.child_id_counter, "stop".to_string());
-            // }
-            // else{
-            //     broadcast_children(ctx, &self.children, self.child_id_counter, "start".to_string());
-            // }
-            // self.started = !self.started;
-
-        }
-        
-        
+    
     }
     fn start(&mut self, context: Context<String>) {
         self.context = Some(context);
@@ -276,11 +288,11 @@ impl Actor<String> for TcpListenActor{
             let paddr = ctx.parent_address.as_ref().expect("").clone();
             match stream {
                 Ok(stream) => {
-                    println!("New connection: {}", stream.peer_addr().unwrap());
+                    //println!("New connection: {}", stream.peer_addr().unwrap());
                     thread::spawn(move || {                
 
                         handle_messages(stream, |message: &str|{
-                            println!("received message {}", message);
+                            //println!("received message {}", message);
                             paddr.send(message.to_string(), Some(paddr.clone()));
                         });
                     });
@@ -348,13 +360,14 @@ pub fn run() {
 
 fn handle_messages<T>(mut conn: TcpStream, f: T)
 where
-  T: FnOnce(&str)
+  T: FnOnce(&str),
 {
   let mut buffer = [0; 512];
   conn.read(&mut buffer).unwrap();
   let message_as_string = String::from_utf8_lossy(&buffer[..]);
+  let message_removed_nulls = message_as_string.trim_right_matches(char::from(0));
   // TODO: Wow, this looks weird.
-  let message_to_pass_on = &(*message_as_string);
+  let message_to_pass_on = &(*message_removed_nulls);
   f(message_to_pass_on);
 
   let string_response = "Thanks!";
