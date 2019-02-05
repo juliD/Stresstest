@@ -44,9 +44,9 @@ impl Actor<String> for WorkerActor{
                         .get(uri)
                         .map(move |res| {
                             println!("HTTP Response {}", res.status());
-                            paddr.send("1".to_owned(), Some(own_addr));                    
+                            paddr.send("1".to_owned(), Some(own_addr.clone()));                    
                                
-                            own_addr.send("start".to_owned(), Some(own_addr));
+                            own_addr.send("start".to_owned(), Some(own_addr.clone()));
                         })
                         .map_err(|err| {
                             println!("Error: {}", err);
