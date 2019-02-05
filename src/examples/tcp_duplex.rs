@@ -1,3 +1,6 @@
+extern crate byteorder;
+
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::env;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -18,17 +21,22 @@ pub fn run() {
   let master_ip = "127.0.0.1";
   let master_port = 3000;
 
+  let number_of_actors: u32 = 5;
+  let mut number_of_actors_bytes = vec![];
+  number_of_actors_bytes.write_u32::<BigEndian>(number_of_actors).unwrap();
+
   if is_master_bool {
-    // master is connecting to slave connections
+    // master is connecting to slave
 
     match TcpStream::connect("localhost:3333") {
       Ok(mut stream) => {
         println!("connected to slave on port 3333");
 
         let msg = b"Hello!";
+        //let msg = &number_of_actors_bytes[..];
 
         stream.write(msg).unwrap();
-        println!("Sent Hello, awaiting reply...");
+        println!("Sent {}, awaiting reply...", number_of_actors);
 
         let mut data = [0 as u8; 6]; // using 6 byte buffer
         match stream.read_exact(&mut data) {
@@ -53,7 +61,7 @@ pub fn run() {
   } else {
     // slave is waiting for connections
 
-    let listener = TcpListener::bind("0.0.0.0:3333").unwrap();
+    let listener = TcpListener::bind("localhost:3333").unwrap();
     // accept connections and process them, spawning a new thread for each one
     println!("slave listening on port 3333");
     for stream in listener.incoming() {
