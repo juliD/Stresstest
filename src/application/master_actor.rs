@@ -208,7 +208,7 @@ impl Actor<Message> for MasterActor {
                 self.workers.push_back(child_addr.clone());
             }
             // connect to master
-            ctx.send(&self.tcp_actor_addr, Message::ConnectToMaster);
+            ctx.send(&self.tcp_actor_addr, Message::ConnectToMaster(ctx.own_address.clone()));
         }
     }
 }
