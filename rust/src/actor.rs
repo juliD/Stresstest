@@ -1,6 +1,7 @@
 use crate::context::*;
+use crate::address::*;
 
-pub trait Actor {
-    fn handle(&mut self, message: String);
-    fn receive_context(&mut self, context: Context);
+pub trait Actor<M> {
+    fn handle(&mut self, message: M, origin_address: Option<Address<M>>);
+    fn start(&mut self, context: Context<M>);
 }

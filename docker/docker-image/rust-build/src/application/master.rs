@@ -1,100 +1,103 @@
 extern crate actor_model;
-extern crate tokio;
+extern crate futures;
 extern crate hyper;
 extern crate mpi;
+extern crate tokio;
 use mpi::traits::*;
 
-use std::collections::LinkedList;
 use actor_model::actor::*;
+use actor_model::actor_system::*;
 use actor_model::address::*;
 use actor_model::context::*;
-use actor_model::router::*;
+use std::collections::LinkedList;
+use std::time::Duration;
 
-use mpi::topology::Rank;
-use std::io::{self, BufRead};
-use hyper::Client;
-use hyper::rt::{self, Future};
 use futures::*;
+use futures::*;
+use hyper::rt::{self, Future};
+use hyper::Client;
+use mpi::topology::Rank;
+use std::char;
+use std::io::{self, BufRead};
+use std::str;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::str;
-use std::char;
+use std::thread;
+use mpi::request::WaitGuard;
+use std::thread::*;
+use mpi::Threading;
 
-struct WorkerActor{
-    context: Option<Context>,
+// #[derive(Clone)]
+type Message = String;
+
+struct WorkerActor {
+    context: Option<Context<Message>>,
     target: hyper::Uri,
 }
-impl WorkerActor{
+impl WorkerActor {}
 
-}
-
-impl Actor for WorkerActor{
-    fn handle(&mut self, message: String){
+impl Actor<Message> for WorkerActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
         let mut split = message.split(" ");
         let vec: Vec<&str> = split.collect();
 
-        match vec[0]{
-            "start" =>{
+        match vec[0] {
+            "start" => {
                 println!("CHILD GOT START");
-                let ctx: &Context = self.context.as_ref().expect("");
-                let paddr: &Address = ctx.parent_address.as_ref().expect("");
-                let own_addr: &Address = &ctx.own_address;
+                let ctx: &Context<Message> = self.context.as_ref().expect("");
+                let paddr: &Address<Message> = ctx.parent_address.as_ref().expect("");
+                let own_addr: &Address<Message> = &ctx.own_address;
                 // for _ in 0..10{
-                
-                    rt::spawn(rt::lazy(move || {
-                        let client = Client::new();
-                        let uri = "http://httpbin.org/ip".parse().unwrap();
-                        client
-                            .get(uri)
-                            .map(move |res| {
-                                println!("HTTP Response {}", res.status());
-                            })
-                            .map_err(|err| {
-                                println!("Error: {}", err);
-                            })
-                    }));                    
-                    // paddr.send("1".to_owned());                    
-                // }                
+
+                rt::spawn(rt::lazy(move || {
+                    let client = Client::new();
+                    let uri = "http://httpbin.org/ip".parse().expect("unwrap 0");
+                    client
+                        .get(uri)
+                        .map(move |res| {
+                            println!("HTTP Response {}", res.status());
+                        })
+                        .map_err(|err| {
+                            println!("Error: {}", err);
+                        })
+                }));
+                // paddr.send("1".to_owned());
+                // }
                 // own_addr.send("start".to_owned());
             }
-            "target" =>{
-                self.target = vec[1].parse().unwrap();
+            "target" => {
+                self.target = vec[1].parse().expect("unwrap 1");
             }
-            "stop" =>{
+            "stop" => {
                 println!("Stopped");
             }
-            _=>{
-
-            }
+            _ => {}
         }
     }
-    fn receive_context(&mut self, context: Context){
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
     }
 }
 
-struct LogActor{
+struct LogActor {
     id: u32,
-    context: Option<Context>,
+    context: Option<Context<Message>>,
 }
 
-impl Actor for LogActor{
+impl Actor<Message> for LogActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {}
 
-    fn handle(&mut self, message: String){
-
-    }
-
-    fn receive_context(&mut self, context: Context){
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
     }
 }
 
-struct MasterActor{
-    children: LinkedList<Address>,
+struct MasterActor {
+    children: LinkedList<Address<Message>>,
     child_id_counter: u32,
-    context: Option<Context>
+    context: Option<Context<Message>>,
 }
-impl MasterActor{
+impl MasterActor {
     fn new() -> MasterActor {
         MasterActor {
             children: LinkedList::new(),
@@ -102,33 +105,28 @@ impl MasterActor{
             context: None,
         }
     }
-  
 }
 
-fn broadcast_children(list: &LinkedList<Address>, count: u32, message: String){
+fn broadcast_children(list: &LinkedList<Address<Message>>, count: u32, message: String) {
     let mut iter = list.iter();
     iter.next();
 
-    for _ in 0..count-1 {
-        match iter.next(){
-            Some(c) =>{
-                c.send(message.to_owned());
-            },
-            _ =>{
-
+    for _ in 0..count - 1 {
+        match iter.next() {
+            Some(c) => {
+                c.send(message.to_owned(), None);
             }
+            _ => {}
         }
-
     }
 }
 
-impl Actor for MasterActor{
-    fn handle(&mut self, message: String){
+impl Actor<Message> for MasterActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
         let mut split = message.split(" ");
         let vec: Vec<&str> = split.collect();
         println!("master got {}", message);
         if vec[0] == "input" {
-            
             match vec[1] {
                 "start" => {
                     //TODO: send all worker children start message
@@ -137,23 +135,18 @@ impl Actor for MasterActor{
                 "stop" => {
                     broadcast_children(&self.children, self.child_id_counter, "stop".to_string());
                 }
-                "log" =>{
-
-                }
-                "target" =>{
+                "log" => {}
+                "target" => {
                     //TODO:check if target correct
                     broadcast_children(&self.children, self.child_id_counter, message);
                 }
-                _ =>{
-                    println!("Not a valid input. Write help to get a list of commands.")
-                }
+                _ => println!("Not a valid input. Write help to get a list of commands."),
             }
         }
     }
-    fn receive_context(&mut self, context: Context) {
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
         println!("init MasterActor");
-
 
         //TODO: LogActor
         // self.child_id_counter += 1;
@@ -166,39 +159,34 @@ impl Actor for MasterActor{
 
         //end if master process
 
-
         //create as many actors as cores available
         let num = 2;
         for x in 1..num {
             self.child_id_counter += 1;
-            let ctx: &Context = self.context.as_ref().expect("");
+            let ctx: &Context<Message> = self.context.as_ref().expect("");
 
             let child_addr = ctx.register_actor(WorkerActor {
                 context: None,
-                target: "http://httpbin.org/ip".parse().unwrap(),
+                target: "http://httpbin.org/ip".parse().expect("unwrap 2"),
             });
 
             self.children.push_back(child_addr.clone());
         }
-
     }
-
-    
 }
 
 struct InputActor {
-    context: Option<Context>,
+    context: Option<Context<Message>>,
 }
-impl Actor for InputActor{
-    fn handle(&mut self, message: String) {
-        if message == "watch input"{
+impl Actor<Message> for InputActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
+        if message == "watch input" {
             let stdin = io::stdin();
             for line in stdin.lock().lines() {
-                
-                match line{
-                    Ok(input) =>{
-                        let ctx: &Context = self.context.as_ref().expect("");
-                        let paddr: &Address = ctx.parent_address.as_ref().expect("");
+                match line {
+                    Ok(input) => {
+                        let ctx: &Context<Message> = self.context.as_ref().expect("");
+                        let paddr: &Address<Message> = ctx.parent_address.as_ref().expect("");
                         let answer = format!("broadcast {}", input);
                         match input.as_ref() {
                             "help" => {
@@ -210,17 +198,15 @@ impl Actor for InputActor{
                                 println!("help                      get all possible commands");
                                 println!("--------------------------------------------------------------------------");
                             }
-                            _ => paddr.send(answer.to_owned())
+                            _ => paddr.send(answer.to_owned(), None),
                         }
                     }
                     Err(e) => println!("error: {}", e),
                 }
-                
             }
-
         }
     }
-    fn receive_context(&mut self, context: Context) {
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
         println!("init InputActor");
     }
@@ -228,7 +214,7 @@ impl Actor for InputActor{
 
 struct CommunicationActor {
     id: i32,
-    context: Option<Context>,
+    context: Option<Context<Message>>,
     univserve: Arc<mpi::environment::Universe>,
 }
 impl CommunicationActor {
@@ -236,91 +222,86 @@ impl CommunicationActor {
         CommunicationActor {
             context: None,
             id: 0,
-            univserve: Arc::new(mpi::initialize().unwrap())
+            univserve: Arc::new(mpi::initialize_with_threading(Threading::Multiple).expect("unwrap 3").0),
         }
     }
 }
-impl Actor for CommunicationActor {
-    fn handle(&mut self, message: String) {
-
+impl Actor<Message> for CommunicationActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
         let mut split = message.split(" ");
         let vec: Vec<&str> = split.collect();
+        println!("commactor msg : {}", message);
         if vec[0] == "broadcast" {
-
-            let msg_vec : Vec<i32> = vec[1].as_bytes().into_iter()
-                .map(|i| *i as i32)
-                .collect();
-
+            let msg_vec: Vec<i32> = vec[1].as_bytes().into_iter().map(|i| *i as i32).collect();
             for x in 0..self.univserve.world().size() {
-                let v = vec![54, 68, 59];
-                self.univserve.world().process_at_rank(x).send(&msg_vec[..]);
+                self.univserve.world().process_at_rank(x)
+                    .ready_send(&msg_vec[..]);
+                thread::sleep(Duration::from_millis(50));
             }
         }
-
     }
 
-    fn receive_context(&mut self, context: Context) {
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
         self.id = self.univserve.world().rank();
 
-        let processor = mpi::environment::processor_name().unwrap();
+
+        let processor = mpi::environment::processor_name().expect("unwrap 4");
         println!(
             "CommunicationActor from Host : {}, process {} of {}! Starting..",
             processor,
-            self.univserve.world().rank(),
+            self.univserve.world().rank() + 1,
             self.univserve.world().size()
         );
 
-        let ctxMaster: &Context = self.context.as_ref().expect("");
+        let ctxMaster: &Context<Message> = self.context.as_ref().expect("");
         let master = MasterActor::new();
         ctxMaster.register_actor(master);
         let addressMaster = ctxMaster.own_address.clone();
 
         //Input Actor
         if self.univserve.world().rank() == 0 {
-            let ctx: &Context = self.context.as_ref().expect("");
-            let child_addr = ctx.register_actor(InputActor {
-                context : None,
-            });
-            child_addr.send("watch input".to_owned());
+            let ctx: &Context<Message> = self.context.as_ref().expect("");
+            let child_addr = ctx.register_actor(InputActor { context: None });
+            child_addr.send("watch input".to_owned(), None);
         }
- 
+
         // TODO
         // DEN ACTOR IN DEN THREAD!!!
         let univeryCopy = self.univserve.clone();
-            
 
-        tokio::spawn(lazy(move || {
+        std::thread::spawn(move || {
             println!("hello Thread started");
-            loop {
-                let (msg, status) = univeryCopy.world()
-                    .any_process().receive_vec::<Rank>();
+            
+            mpi::request::scope(|scope| {
+            
+                loop {
 
-                let msgString: String = msg.into_iter()
-                    .map(|i| {
-                        (i as u8) as char
-                    })
-                    .collect::<String>();
+                    univeryCopy.world().barrier();
+                    let (msg, status) = univeryCopy.world()
+                        .any_process()
+                        .receive_vec::<Rank>();
 
-                // addressMaster.send(
-                //     format!("input {}", msgString)
-                // );
+                    let msgString: String = msg
+                        .into_iter()
+                        .map(|i| (i as u8) as char)
+                        .collect::<String>();
 
-                println!("{}", msgString);
+                    univeryCopy.world().barrier();
+                    // addressMaster.send(
+                    //     format!("input {}", msgString)
+                    // );
 
-            }
-
-            Ok(())
-        }));
-
+                    println!("msg at {} : {}", mpi::environment::processor_name().unwrap(), msgString);
+                }
+            });
+        });
     }
-} 
-
+}
 
 pub fn run() {
     println!("init");
-    Router::start(|| {
-        let spawning_addr = Router::register_actor(CommunicationActor::new(), None);
-        
+    ActorSystem::start(|| {
+        let spawning_addr = ActorSystem::register_actor(CommunicationActor::new(), None);
     });
 }
