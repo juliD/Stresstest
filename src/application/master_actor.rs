@@ -1,61 +1,72 @@
+use std::collections::LinkedList;
 use std::io::Write;
 use std::net::TcpStream;
-use std::collections::LinkedList;
 
 use actor_model::actor::*;
 use actor_model::address::*;
 use actor_model::context::*;
 
 use crate::application::address_parsing::*;
-use crate::application::worker_actor::WorkerActor;
-use crate::application::tcp_listen_actor::TcpListenActor;
 use crate::application::input_actor::InputActor;
 use crate::application::message::Message;
 use crate::application::message_serialization::*;
-
+use crate::application::worker_actor::WorkerActor;
 
 pub struct MasterActor {
-    pub children: LinkedList<Address<Message>>,
+    pub workers: LinkedList<Address<Message>>,
+    pub tcp_actor_addr: Address<Message>,
+    pub input_actor_addr: Option<Address<Message>>,
     pub child_id_counter: u32,
     pub context: Option<Context<Message>>,
     pub master: bool,
     pub counter: u64,
 }
 impl MasterActor {
-    pub fn new(is_master: bool) -> MasterActor {
+    pub fn new(
+        is_master: bool,
+        tcp_actor_addr: Address<Message>,
+        input_actor_addr: Option<Address<Message>>,
+    ) -> MasterActor {
         MasterActor {
-            children: LinkedList::new(),
+            workers: LinkedList::new(),
             child_id_counter: 0,
             context: None,
             master: is_master,
             counter: 0,
+            tcp_actor_addr: tcp_actor_addr,
+            input_actor_addr: input_actor_addr,
         }
     }
-    fn send_slaves(&self, message: String) {
-        //TODO: send to all known slaves
-        match TcpStream::connect("localhost:3333") {
-            Ok(mut stream) => {
-                stream.write(message.as_bytes()).unwrap();
-                stream.flush().unwrap();
-            }
-            Err(e) => {
-                println!("Failed to connect: {}", e);
-            }
-        }
+    // fn send_slaves(&self, message: Message) {
+    //TODO: send to all known slaves
+    // match TcpStream::connect("localhost:3333") {
+    //     Ok(mut stream) => {
+    //         stream.write(message.as_bytes()).unwrap();
+    //         stream.flush().unwrap();
+    //     }
+    //     Err(e) => {
+    //         println!("Failed to connect: {}", e);
+    //     }
+    // }
+    // }
+
+    fn send_tcp_message(&self, target: u32, message: Message) {
+        self.tcp_actor_addr
+            .send(Message::SendTcpMessage(target, Box::new(message)), None);
     }
-    fn send_master_count(&self) {
-        match TcpStream::connect("localhost:3001") {
-            Ok(mut stream) => {
-                stream
-                    .write(serialize_message(Message::ReportRequests(1)).as_bytes())
-                    .unwrap();
-                stream.flush().unwrap();
-            }
-            Err(e) => {
-                println!("Failed to connect: {}", e);
-            }
-        }
-    }
+    // fn send_master_count(&self) {
+    //     match TcpStream::connect("localhost:3001") {
+    //         Ok(mut stream) => {
+    //             stream
+    //                 .write(serialize_message(Message::ReportRequests(1)).as_bytes())
+    //                 .unwrap();
+    //             stream.flush().unwrap();
+    //         }
+    //         Err(e) => {
+    //             println!("Failed to connect: {}", e);
+    //         }
+    //     }
+    // }
 }
 
 fn broadcast_children(
@@ -86,25 +97,25 @@ impl Actor<Message> for MasterActor {
                 if self.master {
                     self.counter += count;
                 } else {
-                    self.send_master_count();
+                    self.send_tcp_message(0, Message::ReportRequests(count));
                 }
             }
             Message::Start => {
                 if self.master {
                     self.counter = 0;
-                    self.send_slaves(serialize_message(Message::Start));
+                    self.send_tcp_message(0, Message::Start);
                 } else {
                     println!("MasterActor starting");
-                    broadcast_children(ctx, &self.children, self.child_id_counter, Message::Start);
+                    broadcast_children(ctx, &self.workers, self.child_id_counter, Message::Start);
                 }
             }
             Message::Stop => {
                 if self.master {
                     self.counter = 0;
-                    self.send_slaves(serialize_message(Message::Stop));
+                    self.send_tcp_message(0, Message::Stop);
                 } else {
                     println!("MasterActor stopped");
-                    broadcast_children(ctx, &self.children, self.child_id_counter, Message::Stop);
+                    broadcast_children(ctx, &self.workers, self.child_id_counter, Message::Stop);
                 }
             }
             Message::Log => {
@@ -113,13 +124,12 @@ impl Actor<Message> for MasterActor {
             Message::SetTarget(target_address_raw) => {
                 if !self.master {
                     // TODO: Use String in target method
-                    let target_address_is_valid =
-                        verify_target_address(&target_address_raw);
+                    let target_address_is_valid = verify_target_address(&target_address_raw);
                     if target_address_is_valid {
                         println!("valid target {}", target_address_raw);
                         broadcast_children(
                             ctx,
-                            &self.children,
+                            &self.workers,
                             self.child_id_counter,
                             Message::SetTarget(target_address_raw),
                         );
@@ -147,31 +157,39 @@ impl Actor<Message> for MasterActor {
         }
     }
     fn start(&mut self, context: Context<Message>) {
-        self.context = Some(context);
         println!("init MasterActor");
+        self.context = Some(context);
 
-        let mut port = 3333;
-        if self.master {
-            //Input Actor
-            self.child_id_counter += 1;
-            let ctx: &Context<Message> = self.context.as_ref().expect("");
-            let child_addr = ctx.register_actor(InputActor {
-                id: self.child_id_counter,
-                context: None,
-            });
-            self.children.push_back(child_addr.clone());
-            ctx.send(&child_addr, Message::StartWatchInput);
-            port = 3001;
-        }
+        // let mut port = 3333;
+        // if self.master {
+        //     //Input Actor
+        //     self.child_id_counter += 1;
+        //     let ctx: &Context<Message> = self.context.as_ref().expect("");
+        //     let child_addr = ctx.register_actor(InputActor {
+        //         id: self.child_id_counter,
+        //         context: None,
+        //     });
+        //     self.input_actor_addr = Some(child_addr.clone());
+        //     ctx.send(&child_addr, Message::StartWatchInput);
+        //     port = 3001;
+        // }
 
-        //create TCPListener
-        self.child_id_counter += 1;
+        // //create TCPListener
+        // self.child_id_counter += 1;
+        // let ctx: &Context<Message> = self.context.as_ref().expect("");
+        // let child_addr = ctx.register_actor(TcpListenActor::new(port));
+        // self.tcp_actor_addr = child_addr.clone();
+
         let ctx: &Context<Message> = self.context.as_ref().expect("");
-        let child_addr = ctx.register_actor(TcpListenActor::new(port));
-        self.children.push_back(child_addr.clone());
-        ctx.send(&child_addr, Message::StartListenTcp);
 
-        if !self.master {
+        ctx.send(&self.tcp_actor_addr, Message::StartListenForTcp(ctx.own_address.clone()));
+
+        if self.master {
+            match self.input_actor_addr.as_ref() {
+                Some(addr) => ctx.send(&addr, Message::StartWatchInput(ctx.own_address.clone())),
+                None => println!("MasterActor has no InputActor"),
+            }
+        } else {
             //create as many actors as cores available
             let num = num_cpus::get();
             for x in 0..num {
@@ -183,7 +201,7 @@ impl Actor<Message> for MasterActor {
                     target: "http://httpbin.org/ip".to_owned(),
                     status: false,
                 });
-                self.children.push_back(child_addr.clone());
+                self.workers.push_back(child_addr.clone());
             }
         }
     }

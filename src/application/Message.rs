@@ -1,3 +1,7 @@
+extern crate actor_model;
+
+use actor_model::address::*;
+
 #[derive(Clone)]
 pub enum Message {
     // MasterActor
@@ -9,8 +13,9 @@ pub enum Message {
     Stop,
     SetTarget(String),
     // TcpActor
+    StartListenForTcp(Address<Message>),
     IncomingTcpMessage(String),
     SendTcpMessage(u32, Box<Message>),
     // InputActor
-    StartWatchInput,
+    StartWatchInput(Address<Message>),
 }

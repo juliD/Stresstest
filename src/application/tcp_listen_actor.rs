@@ -20,6 +20,7 @@ pub struct TcpListenActor {
     port: u32,
     connections: HashMap<u32, TcpStream>,
     connections_id_counter: u32,
+    master_addr: Option<Address<Message>>,
 }
 impl TcpListenActor {
     pub fn new(port: u32) -> TcpListenActor {
@@ -28,10 +29,12 @@ impl TcpListenActor {
             port: port,
             connections: HashMap::new(),
             connections_id_counter: 0,
+            master_addr: None,
         }
     }
 
-    fn listenForTcp(&self) {
+    fn listen_for_tcp(&mut self) {
+        let addr = format!("localhost:{}", self.port);
         let listener = TcpListener::bind(addr).unwrap();
         // accept connections and process them, spawning a new thread for each one
         println!("master listening on port {}", self.port);
@@ -70,32 +73,38 @@ impl TcpListenActor {
 }
 impl Actor<Message> for TcpListenActor {
     fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
-        let addr = format!("localhost:{}", self.port);
-
         let ctx: &Context<Message> = self.context.as_ref().expect("");
-        let parent_address = ctx.parent_address.unwrap().clone();
 
         match message {
+            Message::StartListenForTcp(master_addr) => {
+                self.master_addr = Some(master_addr);
+                self.listen_for_tcp();
+            }
             Message::IncomingTcpMessage(str_message) => {
                 match parse_message(str_message.as_ref()) {
-                    Some(actor_message) => ctx.send(&parent_address, actor_message),
+                    Some(actor_message) => {
+                        println!("received tcp message: {}", str_message);
+                        match self.master_addr.as_ref() {
+                            Some(addr) => ctx.send(&addr, actor_message),
+                            None => println!("TcpActor has no master address to report to")
+                        };
+                    }
                     None => (),
                 };
             }
             Message::SendTcpMessage(target, actor_message) => match self.connections.get(&target) {
-                Some(stream) => {
+                Some(mut stream) => {
                     stream.write(serialize_message(*actor_message).as_bytes());
                 }
                 None => println!("unknown target"),
             },
+            _ => println!("MasterActor received unknown message"),
         }
     }
     fn start(&mut self, context: Context<Message>) {
         println!("init TcpListenActor");
 
         self.context = Some(context);
-
-        self.listenForTcp();
     }
 }
 

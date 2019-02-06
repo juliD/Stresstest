@@ -1,6 +1,6 @@
-use crate::application::message::Message;
-use crate::application::input_processing::*;
 use crate::application::address_parsing::*;
+use crate::application::input_processing::*;
+use crate::application::message::Message;
 
 pub fn parse_message(message: &str) -> Option<Message> {
     let (input_part_1, input_part_2) = parse_user_input(message);
@@ -13,10 +13,10 @@ pub fn parse_message(message: &str) -> Option<Message> {
             // TODO: prettify
             match input_part_2 {
                 // TODO: handle parsing error
-                Some(param) => Some(Message::ReportRequests(param.parse().unwrap())),
+                Some(param) => Some(Message::ReportRequests(param.parse().expect("parsing"))),
                 None => None,
             }
-        },
+        }
         Some("target") => {
             // TODO: prettify
             match input_part_2 {
@@ -28,11 +28,17 @@ pub fn parse_message(message: &str) -> Option<Message> {
                         println!("invalid target address");
                         None
                     }
-                },
-                None => None,
+                }
+                None => {
+                    println!("could not parse target message");
+                    None
+                }
             }
         }
-        _ => None
+        _ => {
+            println!("could not parse message");
+            None
+        }
     }
 }
 
