@@ -85,7 +85,7 @@ fn handle_connection(stream: TcpStream, addr: Address<Message>) {
     thread::spawn(move || {
         println!("spawned new thread handling tcp stream");
         handle_messages(stream, |message: &str| {
-            println!("received tcp message, going to send actor message");
+            // println!("received tcp message, going to send actor message");
             addr.send_self(Message::IncomingTcpMessage(message.to_owned()));
         });
     });
@@ -183,16 +183,19 @@ where
     T: FnMut(&str),
 {
     loop {
+
+        // TODO: shut down stream when EOF is read
         let mut buffer = [0; 512];
+        // let mut vec = Vec::new();
         conn.read(&mut buffer).unwrap();
         let message_as_string = String::from_utf8_lossy(&buffer[..]);
         let message_removed_nulls = message_as_string.trim_right_matches(char::from(0));
+        //let message_removed_nulls = String::from_utf8(buffer[..].to_vec());
+
         // TODO: Wow, this looks weird.
         let message_to_pass_on = &(*message_removed_nulls);
         f(message_to_pass_on);
-    }
+        // f(message_removed_nulls.unwrap().as_ref());
 
-    // let string_response = "Thanks!";
-    // conn.write(string_response.as_bytes()).unwrap();
-    // conn.flush().unwrap();
+    }
 }

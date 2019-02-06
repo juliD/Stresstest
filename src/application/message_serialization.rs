@@ -13,7 +13,16 @@ pub fn parse_message(message: &str) -> Option<Message> {
             // TODO: prettify
             match input_part_2 {
                 // TODO: handle parsing error
-                Some(param) => Some(Message::ReportRequests(param.parse().expect("parsing"))),
+                Some(param) => {
+                    let int_param = match param.parse() {
+                        Ok(p) => Some(p),
+                        Err(error) => {
+                            println!("could not parse argument: {}", error);
+                            None
+                        }
+                    };
+                    int_param.map(|p| Message::ReportRequests(p))
+                }
                 None => None,
             }
         }
