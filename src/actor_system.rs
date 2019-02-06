@@ -71,6 +71,7 @@ impl ActorSystem {
         };
         actor.start(context);
         ThreadUtils::handle_stream_background(receiver, move |envelope: Envelope<M>| {
+            println!("lib: handle message");
             actor.handle(envelope.message, envelope.origin_address);
         });
         child_address

@@ -28,8 +28,8 @@ impl Actor<Message> for WorkerActor {
                     self.status = false;
                     return;
                 }
-                let ctx = self.context.as_ref().expect("");
-                let paddr = ctx.parent_address.as_ref().expect("");
+                let ctx = self.context.as_ref().expect("unwrapping context");
+                let paddr = ctx.parent_address.as_ref().expect("unwrapping parent address");
                 let own_addr = ctx.own_address.clone();
 
                 self.request();

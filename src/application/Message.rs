@@ -13,6 +13,7 @@ pub enum Message {
     Stop,
     SetTarget(String),
     // TcpActor
+    ConnectToMaster,
     StartListenForTcp(Address<Message>),
     IncomingTcpMessage(String),
     SendTcpMessage(u32, Box<Message>),

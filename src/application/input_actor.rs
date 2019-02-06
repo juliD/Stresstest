@@ -19,7 +19,7 @@ impl Actor<Message> for InputActor {
             for line in stdin.lock().lines() {
                 match line {
                     Ok(input) => {
-                        let ctx: &Context<Message> = self.context.as_ref().expect("");
+                        let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
                         let message_option = parse_message(input.as_ref());
 
                         match message_option {

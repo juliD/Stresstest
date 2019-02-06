@@ -24,7 +24,7 @@ impl Actor<CustomMessage> for SpawningActor {
     fn handle(&mut self, message: CustomMessage, origin_address: Option<Address<CustomMessage>>) {
         match message {
             CustomMessage::SpawnMessage(address, count) => {
-                let ctx: &Context<CustomMessage> = self.context.as_ref().expect("");
+                let ctx: &Context<CustomMessage> = self.context.as_ref().expect("unwrapping context");
                 let child_addr = ctx.register_actor(SpawningActor { context: None });
                 ctx.send(
                     &address,

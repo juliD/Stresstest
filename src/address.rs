@@ -18,10 +18,12 @@ where
 {
     /// Sends a message to the mailbox of the actor with this address.
     pub fn send(&self, message: M, origin_address: Option<Address<M>>) {
+        println!("lib: start sending message");
         let result = self.sender.clone().send(Envelope {
             message: message,
             origin_address: origin_address,
         });
+        println!("lib: done sending message");
         match result {
             Err(e) => println!("encountered an error sending a message: {}", e),
             _ => (),

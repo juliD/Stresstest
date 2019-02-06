@@ -51,6 +51,7 @@ impl MasterActor {
     // }
 
     fn send_tcp_message(&self, target: u32, message: Message) {
+        println!("MasterActor send_tcp_message");
         self.tcp_actor_addr
             .send(Message::SendTcpMessage(target, Box::new(message)), None);
     }
@@ -90,7 +91,7 @@ fn broadcast_children(
 
 impl Actor<Message> for MasterActor {
     fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
-        let ctx: &Context<Message> = self.context.as_ref().expect("");
+        let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
 
         match message {
             Message::ReportRequests(count) => {
@@ -164,7 +165,7 @@ impl Actor<Message> for MasterActor {
         // if self.master {
         //     //Input Actor
         //     self.child_id_counter += 1;
-        //     let ctx: &Context<Message> = self.context.as_ref().expect("");
+        //     let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
         //     let child_addr = ctx.register_actor(InputActor {
         //         id: self.child_id_counter,
         //         context: None,
@@ -176,25 +177,28 @@ impl Actor<Message> for MasterActor {
 
         // //create TCPListener
         // self.child_id_counter += 1;
-        // let ctx: &Context<Message> = self.context.as_ref().expect("");
+        // let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
         // let child_addr = ctx.register_actor(TcpListenActor::new(port));
         // self.tcp_actor_addr = child_addr.clone();
 
-        let ctx: &Context<Message> = self.context.as_ref().expect("");
-
-        ctx.send(&self.tcp_actor_addr, Message::StartListenForTcp(ctx.own_address.clone()));
+        let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
 
         if self.master {
             match self.input_actor_addr.as_ref() {
                 Some(addr) => ctx.send(&addr, Message::StartWatchInput(ctx.own_address.clone())),
                 None => println!("MasterActor has no InputActor"),
             }
+            // start listening for worker connections
+            ctx.send(
+                &self.tcp_actor_addr,
+                Message::StartListenForTcp(ctx.own_address.clone()),
+            );
         } else {
             //create as many actors as cores available
             let num = num_cpus::get();
             for x in 0..num {
                 self.child_id_counter += 1;
-                let ctx: &Context<Message> = self.context.as_ref().expect("");
+                let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
                 let child_addr = ctx.register_actor(WorkerActor {
                     id: self.child_id_counter,
                     context: None,
@@ -203,6 +207,8 @@ impl Actor<Message> for MasterActor {
                 });
                 self.workers.push_back(child_addr.clone());
             }
+            // connect to master
+            ctx.send(&self.tcp_actor_addr, Message::ConnectToMaster);
         }
     }
 }
