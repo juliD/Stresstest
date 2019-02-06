@@ -5,7 +5,7 @@ use actor_model::context::*;
 use std::io::{self, BufRead};
 
 use crate::application::message::Message;
-use crate::application::utils::*;
+use crate::application::message_serialization::*;
 
 
 pub struct InputActor {
@@ -21,7 +21,7 @@ impl Actor<Message> for InputActor {
                     Ok(input) => {
                         let ctx: &Context<Message> = self.context.as_ref().expect("");
                         let paddr: &Address<Message> = ctx.parent_address.as_ref().expect("");
-                        let message_option = parse_string_message(input.as_ref());
+                        let message_option = parse_message(input.as_ref());
 
                         match message_option {
                             Some(msg) => ctx.send(&paddr, msg),

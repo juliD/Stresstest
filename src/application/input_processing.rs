@@ -1,6 +1,6 @@
 const INPUT_SEPARATOR: &str = " ";
 
-pub fn parse_user_input(input: &String) -> (Option<&str>, Option<&str>) {
+pub fn parse_user_input(input: &str) -> (Option<&str>, Option<&str>) {
   let split = input.split(INPUT_SEPARATOR);
   let vec: Vec<&str> = split.collect();
   let vec_len = vec.len();

@@ -4,24 +4,14 @@ extern crate lazy_static;
 extern crate reqwest;
 
 use actor_model::actor::*;
-use actor_model::actor_system::*;
 use actor_model::address::*;
 use actor_model::context::*;
-use actor_model::message::*;
-use std::collections::LinkedList;
 
-use crate::application::address_parsing::*;
-use crate::application::worker_actor::WorkerActor;
-use crate::application::input_actor::InputActor;
 use crate::application::message::Message;
-use crate::application::utils::*;
+use crate::application::message_serialization::*;
 
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use std::env;
-use std::io::{self, BufRead};
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpListener, TcpStream};
-use std::str::from_utf8;
+use std::net::{TcpListener, TcpStream};
 use std::thread;
 
 pub struct TcpListenActor {
@@ -43,7 +33,7 @@ impl Actor<Message> for TcpListenActor {
                     //println!("New connection: {}", stream.peer_addr().unwrap());
                     thread::spawn(move || {
                         handle_messages(stream, |message: &str| {
-                            match parse_string_message(message) {
+                            match parse_message(message) {
                                 Some(actor_message) => {
                                     paddr.send(actor_message, Some(paddr.clone()))
                                 }

@@ -11,7 +11,7 @@ use crate::application::worker_actor::WorkerActor;
 use crate::application::tcp_listen_actor::TcpListenActor;
 use crate::application::input_actor::InputActor;
 use crate::application::message::Message;
-use crate::application::utils::*;
+use crate::application::message_serialization::*;
 
 
 pub struct MasterActor {
@@ -47,7 +47,7 @@ impl MasterActor {
         match TcpStream::connect("localhost:3001") {
             Ok(mut stream) => {
                 stream
-                    .write(serialize_string_message(Message::ReportRequests(1)).as_bytes())
+                    .write(serialize_message(Message::ReportRequests(1)).as_bytes())
                     .unwrap();
                 stream.flush().unwrap();
             }
@@ -92,7 +92,7 @@ impl Actor<Message> for MasterActor {
             Message::Start => {
                 if self.master {
                     self.counter = 0;
-                    self.send_slaves(serialize_string_message(Message::Start));
+                    self.send_slaves(serialize_message(Message::Start));
                 } else {
                     println!("MasterActor starting");
                     broadcast_children(ctx, &self.children, self.child_id_counter, Message::Start);
@@ -101,7 +101,7 @@ impl Actor<Message> for MasterActor {
             Message::Stop => {
                 if self.master {
                     self.counter = 0;
-                    self.send_slaves(serialize_string_message(Message::Stop));
+                    self.send_slaves(serialize_message(Message::Stop));
                 } else {
                     println!("MasterActor stopped");
                     broadcast_children(ctx, &self.children, self.child_id_counter, Message::Stop);
