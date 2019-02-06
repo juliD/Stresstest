@@ -1,4 +1,4 @@
-use std::net::{SocketAddr};
+use std::net::SocketAddr;
 
 const SET_TARGET_COMMAND: &str = "target";
 const COMMAND_PARAMETER_SEPARATOR: &str = " ";
