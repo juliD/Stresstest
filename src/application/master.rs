@@ -317,19 +317,36 @@ impl Actor<Message> for TcpListenActor {
 }
 
 fn parse_string_message(message: &str) -> Option<Message> {
-    match message {
-        "start" => Some(Message::Start),
-        "stop" => Some(Message::Stop),
-        "log" => Some(Message::Log),
-        "help" => Some(Message::Help),
-        _ => {
-            let split = message.split(" ");
-            let vec: Vec<&str> = split.collect();
-            match vec[0] {
-                "reportrequests" => Some(Message::ReportRequests(vec[1].parse().unwrap())),
-                _ => None,
+    let (input_part_1, input_part_2) = input_processing::parse_user_input(message);
+    match input_part_1 {
+        Some("start") => Some(Message::Start),
+        Some("stop") => Some(Message::Stop),
+        Some("log") => Some(Message::Log),
+        Some("help") => Some(Message::Help),
+        Some("reportrequests") => {
+            // TODO: prettify
+            match input_part_2 {
+                // TODO: handle parsing error
+                Some(param) => Some(Message::ReportRequests(param.parse().unwrap())),
+                None => None,
+            }
+        },
+        Some("target") => {
+            // TODO: prettify
+            match input_part_2 {
+                Some(address_raw) => {
+                    if address_parsing::verify_target_address(address_raw) {
+                        Some(Message::SetTarget(String::from(address_raw)))
+                    } else {
+                        // TODO: better error handling
+                        println!("invalid target address");
+                        None
+                    }
+                },
+                None => None,
             }
         }
+        _ => None
     }
 }
 
