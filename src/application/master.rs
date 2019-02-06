@@ -1,12 +1,18 @@
 extern crate actor_model;
 extern crate byteorder;
+extern crate lazy_static;
 extern crate reqwest;
+
 use actor_model::actor::*;
 use actor_model::actor_system::*;
 use actor_model::address::*;
 use actor_model::context::*;
+use actor_model::message::*;
 use std::collections::LinkedList;
 
+use crate::application::address_parsing;
+use crate::application::input_processing;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::env;
 use std::io::{self, BufRead};
 use std::io::{Read, Write};
@@ -14,12 +20,27 @@ use std::net::{Shutdown, TcpListener, TcpStream};
 use std::str::from_utf8;
 use std::thread;
 
-use crate::application::address_parsing;
-use crate::application::input_processing;
+#[derive(Clone)]
+enum Message {
+    // MasterActor
+    Log,
+    ReportRequests(u64),
+    Help,
+    IncomingTcpMessage(String),
+    // MasterActor + WorkerActor
+    Start,
+    Stop,
+    SetTarget(String),
+    // TcpActor
+    StartListenTcp,
+    // InputActor
+    StartWatchInput,
+}
+// type Message = String;
 
 struct WorkerActor {
     id: u32,
-    context: Option<Context<String>>,
+    context: Option<Context<Message>>,
     target: String,
     status: bool,
 }
@@ -32,13 +53,10 @@ impl WorkerActor {
     }
 }
 
-impl Actor<String> for WorkerActor {
-    fn handle(&mut self, message: String, origin_address: Option<Address<String>>) {
-        let mut split = message.split(" ");
-        let vec: Vec<&str> = split.collect();
-
-        match vec[0] {
-            "start" => {
+impl Actor<Message> for WorkerActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
+        match message {
+            Message::Start => {
                 if self.status {
                     self.status = false;
                     return;
@@ -48,41 +66,41 @@ impl Actor<String> for WorkerActor {
                 let own_addr = ctx.own_address.clone();
 
                 self.request();
-                ctx.send(&paddr, "1".to_string());
-                ctx.send(&own_addr, "start".to_string());
+                ctx.send(&paddr, Message::ReportRequests(1));
+                ctx.send(&ctx.own_address, Message::Start);
             }
-            "target" => {
-                self.target = vec[1].parse().unwrap();
+            Message::SetTarget(target) => {
+                self.target = target;
             }
-            "stop" => {
-                println!("Stopped");
+            Message::Stop => {
+                println!("WorkerActor stopped");
                 self.status = true;
             }
-            _ => {}
+            _ => println!("WorkerActor received unknown message"),
         }
     }
-    fn start(&mut self, context: Context<String>) {
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
     }
 }
 
 struct LogActor {
     id: u32,
-    context: Option<Context<String>>,
+    context: Option<Context<Message>>,
 }
 
-impl Actor<String> for LogActor {
-    fn handle(&mut self, message: String, origin_address: Option<Address<String>>) {}
+impl Actor<Message> for LogActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {}
 
-    fn start(&mut self, context: Context<String>) {
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
     }
 }
 
 struct MasterActor {
-    children: LinkedList<Address<String>>,
+    children: LinkedList<Address<Message>>,
     child_id_counter: u32,
-    context: Option<Context<String>>,
+    context: Option<Context<Message>>,
     master: bool,
     counter: u64,
 }
@@ -111,7 +129,9 @@ impl MasterActor {
     fn send_master_count(&self) {
         match TcpStream::connect("localhost:3001") {
             Ok(mut stream) => {
-                stream.write("1".as_bytes()).unwrap();
+                stream
+                    .write(serialize_string_message(Message::ReportRequests(1)).as_bytes())
+                    .unwrap();
                 stream.flush().unwrap();
             }
             Err(e) => {
@@ -122,10 +142,10 @@ impl MasterActor {
 }
 
 fn broadcast_children(
-    ctx: &Context<String>,
-    list: &LinkedList<Address<String>>,
+    ctx: &Context<Message>,
+    list: &LinkedList<Address<Message>>,
     count: u32,
-    message: String,
+    message: Message,
 ) {
     let mut iter = list.iter();
     iter.next();
@@ -133,74 +153,65 @@ fn broadcast_children(
     for _ in 0..count - 1 {
         match iter.next() {
             Some(c) => {
-                ctx.send(&c, message.to_owned());
+                ctx.send(&c, message.clone());
             }
             _ => {}
         }
     }
 }
 
-impl Actor<String> for MasterActor {
-    fn handle(&mut self, message: String, origin_address: Option<Address<String>>) {
-        let ctx: &Context<String> = self.context.as_ref().expect("");
-        let (input1, input2) = input_processing::parse_user_input(&message);
-        match input1 {
-            Some("1") => {
+impl Actor<Message> for MasterActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
+        let ctx: &Context<Message> = self.context.as_ref().expect("");
+
+        match message {
+            Message::ReportRequests(count) => {
                 if self.master {
-                    self.counter += 1;
+                    self.counter += count;
                 } else {
                     self.send_master_count();
-                    println!("Sent count");
                 }
             }
-            Some("start") => {
+            Message::Start => {
                 if self.master {
                     self.counter = 0;
-                    self.send_slaves(message);
+                    self.send_slaves(serialize_string_message(Message::Start));
                 } else {
-                    println!("Started");
+                    println!("MasterActor starting");
+                    broadcast_children(ctx, &self.children, self.child_id_counter, Message::Start);
                 }
-                broadcast_children(
-                    ctx,
-                    &self.children,
-                    self.child_id_counter,
-                    "start".to_string(),
-                );
             }
-            Some("stop") => {
+            Message::Stop => {
                 if self.master {
                     self.counter = 0;
-                    self.send_slaves(message);
+                    self.send_slaves(serialize_string_message(Message::Stop));
                 } else {
-                    println!("Stopped");
+                    println!("MasterActor stopped");
+                    broadcast_children(ctx, &self.children, self.child_id_counter, Message::Stop);
                 }
-                broadcast_children(
-                    ctx,
-                    &self.children,
-                    self.child_id_counter,
-                    "stop".to_string(),
-                );
             }
-            Some("log") => {
+            Message::Log => {
                 println!("Requests sent: {}", self.counter);
             }
-            Some("target") => {
-                match input2 {
-                    Some(target_address_raw) => {
-                        let target_address_is_valid = address_parsing::verify_target_address(target_address_raw);
-                        if target_address_is_valid {
-                            println!("valid target {}", target_address_raw);
-                            broadcast_children(ctx, &self.children, self.child_id_counter, message);
-                        } else {
-                            println!("invalid target address (please enter <IP>:<port>)");
-                        }
-                    },
-                    _ => {
-                        println!("please enter a target adress after 'target'");
+            Message::SetTarget(target_address_raw) => {
+                if !self.master {
+                    // TODO: Use String in target method
+                    let target_address_is_valid =
+                        address_parsing::verify_target_address(&target_address_raw);
+                    if target_address_is_valid {
+                        println!("valid target {}", target_address_raw);
+                        broadcast_children(
+                            ctx,
+                            &self.children,
+                            self.child_id_counter,
+                            Message::SetTarget(target_address_raw),
+                        );
+                    } else {
+                        println!("invalid target address (please enter <IP>:<port>)");
                     }
                 }
             }
-            Some("help") => {
+            Message::Help => {
                 println!(
                     "--------------------------------------------------------------------------"
                 );
@@ -215,14 +226,10 @@ impl Actor<String> for MasterActor {
                     "--------------------------------------------------------------------------"
                 );
             }
-            _ => {
-                println!("This is what I got: -{}-", message);
-
-                println!("Not a valid input. Write help to get a list of commands.")
-            }
+            _ => println!("MasterActor received unknown message"),
         }
     }
-    fn start(&mut self, context: Context<String>) {
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
         println!("init MasterActor");
 
@@ -230,49 +237,50 @@ impl Actor<String> for MasterActor {
         if self.master {
             //Input Actor
             self.child_id_counter += 1;
-            let ctx: &Context<String> = self.context.as_ref().expect("");
+            let ctx: &Context<Message> = self.context.as_ref().expect("");
             let child_addr = ctx.register_actor(InputActor {
                 id: self.child_id_counter,
                 context: None,
             });
             self.children.push_back(child_addr.clone());
-            ctx.send(&child_addr, "watch input".to_owned());
+            ctx.send(&child_addr, Message::StartWatchInput);
             port = 3001;
         }
 
         //create TCPListener
         self.child_id_counter += 1;
-        let ctx: &Context<String> = self.context.as_ref().expect("");
+        let ctx: &Context<Message> = self.context.as_ref().expect("");
         let child_addr = ctx.register_actor(TcpListenActor {
             context: None,
             port: port,
         });
         self.children.push_back(child_addr.clone());
-        ctx.send(&child_addr, "listen".to_string());
+        ctx.send(&child_addr, Message::StartListenTcp);
 
-        //create as many actors as cores available
-        let num = num_cpus::get();
-        for x in 0..num {
-            self.child_id_counter += 1;
-            let ctx: &Context<String> = self.context.as_ref().expect("");
-            let child_addr = ctx.register_actor(WorkerActor {
-                id: self.child_id_counter,
-                context: None,
-                target: "http://httpbin.org/ip".to_owned(),
-                status: false,
-            });
-            self.children.push_back(child_addr.clone());
+        if !self.master {
+            //create as many actors as cores available
+            let num = num_cpus::get();
+            for x in 0..num {
+                self.child_id_counter += 1;
+                let ctx: &Context<Message> = self.context.as_ref().expect("");
+                let child_addr = ctx.register_actor(WorkerActor {
+                    id: self.child_id_counter,
+                    context: None,
+                    target: "http://httpbin.org/ip".to_owned(),
+                    status: false,
+                });
+                self.children.push_back(child_addr.clone());
+            }
         }
     }
 }
 
 struct TcpListenActor {
-    context: Option<Context<String>>,
+    context: Option<Context<Message>>,
     port: u32,
 }
-// TODO: This actor will block after it receives the first message. Is that wanted behavior?
-impl Actor<String> for TcpListenActor {
-    fn handle(&mut self, message: String, origin_address: Option<Address<String>>) {
+impl Actor<Message> for TcpListenActor {
+    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
         let addr = format!("localhost:{}", self.port);
         let listener = TcpListener::bind(addr).unwrap();
 
@@ -286,8 +294,12 @@ impl Actor<String> for TcpListenActor {
                     //println!("New connection: {}", stream.peer_addr().unwrap());
                     thread::spawn(move || {
                         handle_messages(stream, |message: &str| {
-                            //println!("received message {}", message);
-                            paddr.send(message.to_string(), Some(paddr.clone()));
+                            match parse_string_message(message) {
+                                Some(actor_message) => {
+                                    paddr.send(actor_message, Some(paddr.clone()))
+                                }
+                                None => println!("could not parse tcp message: {}", message),
+                            };
                         });
                     });
                 }
@@ -298,35 +310,68 @@ impl Actor<String> for TcpListenActor {
             }
         }
     }
-    fn start(&mut self, context: Context<String>) {
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
         println!("init TcpListenActor");
     }
 }
 
+fn parse_string_message(message: &str) -> Option<Message> {
+    match message {
+        "start" => Some(Message::Start),
+        "stop" => Some(Message::Stop),
+        "log" => Some(Message::Log),
+        "help" => Some(Message::Help),
+        _ => {
+            let split = message.split(" ");
+            let vec: Vec<&str> = split.collect();
+            match vec[0] {
+                "reportrequests" => Some(Message::ReportRequests(vec[1].parse().unwrap())),
+                _ => None,
+            }
+        }
+    }
+}
+
+fn serialize_string_message(message: Message) -> String {
+    match message {
+        Message::Start => "start".to_owned(),
+        Message::Stop => "stop".to_owned(),
+        Message::Log => "log".to_owned(),
+        Message::Help => "help".to_owned(),
+        Message::ReportRequests(count) => format!("reportrequests {}", count),
+        _ => panic!("failed to serialize actor message"),
+    }
+}
+
 struct InputActor {
     id: u32,
-    context: Option<Context<String>>,
+    context: Option<Context<Message>>,
 }
-// TODO: This actor will block after it receives the "watch input" message. Is that wanted behavior?
-impl Actor<String> for InputActor {
-    fn handle(&mut self, message: String, origin_address: Option<Address<String>>) {
-        if message == "watch input" {
+impl Actor<Message> for InputActor {
+    fn handle(&mut self, message: Message, _origin_address: Option<Address<Message>>) {
+        if let Message::StartWatchInput = message {
             let stdin = io::stdin();
             for line in stdin.lock().lines() {
                 match line {
                     Ok(input) => {
-                        let ctx: &Context<String> = self.context.as_ref().expect("");
-                        let paddr: &Address<String> = ctx.parent_address.as_ref().expect("");
+                        let ctx: &Context<Message> = self.context.as_ref().expect("");
+                        let paddr: &Address<Message> = ctx.parent_address.as_ref().expect("");
+                        let message_option = parse_string_message(input.as_ref());
 
-                        ctx.send(&paddr, input.to_owned());
+                        match message_option {
+                            Some(msg) => ctx.send(&paddr, msg),
+                            None => {
+                                println!("Not a valid input. Write help to get a list of commands.")
+                            }
+                        }
                     }
                     Err(e) => println!("error: {}", e),
                 }
             }
         }
     }
-    fn start(&mut self, context: Context<String>) {
+    fn start(&mut self, context: Context<Message>) {
         self.context = Some(context);
         println!("init InputActor");
     }
@@ -339,7 +384,7 @@ pub fn run() {
 
     println!("init");
     ActorSystem::start(move || {
-        let spawning_addr = ActorSystem::register_actor(MasterActor::new(is_master_bool), None);
+        ActorSystem::register_actor(MasterActor::new(is_master_bool), None);
     });
 }
 

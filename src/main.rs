@@ -1,7 +1,7 @@
-mod examples;
 mod application;
+#[macro_use]
+extern crate lazy_static;
 
 fn main() {
-    // examples::spawning_child_actors::run();
     application::master::run();
 }
