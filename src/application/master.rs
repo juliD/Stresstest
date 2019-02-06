@@ -55,7 +55,6 @@ impl Actor<Message> for WorkerActor {
     fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
         match message {
             Message::Start => {
-                println!("Worker starting");
                 if self.status {
                     self.status = false;
                     return;
@@ -65,17 +64,17 @@ impl Actor<Message> for WorkerActor {
                 let own_addr = ctx.own_address.clone();
 
                 self.request();
-                ctx.send(&ctx.own_address, Message::ReportRequests(1));
+                ctx.send(&paddr, Message::ReportRequests(1));
                 ctx.send(&ctx.own_address, Message::Start);
             }
             Message::SetTarget(target) => {
                 self.target = target;
             }
             Message::Stop => {
-                println!("Stopped");
+                println!("WorkerActor stopped");
                 self.status = true;
             }
-            _ => {}
+            _ => println!("WorkerActor received unknown message")
         }
     }
     fn start(&mut self, context: Context<Message>) {
@@ -165,40 +164,34 @@ impl Actor<Message> for MasterActor {
 
         match message {
             Message::ReportRequests(count) => {
-                println!("MasterActor received ReportRequests");
                 if self.master {
                     self.counter += count;
                 } else {
                     self.send_master_count();
-                    println!("Sent count");
                 }
             }
             Message::Start => {
-                println!("MasterActor received Start");
                 if self.master {
                     self.counter = 0;
                     self.send_slaves(serialize_string_message(Message::Start));
                 } else {
-                    println!("Started");
+                    println!("MasterActor starting");
                     broadcast_children(ctx, &self.children, self.child_id_counter, Message::Start);
                 }
             }
             Message::Stop => {
-                println!("MasterActor received Stop");
                 if self.master {
                     self.counter = 0;
                     self.send_slaves(serialize_string_message(Message::Stop));
                 } else {
-                    println!("Stopped");
+                    println!("MasterActor stopped");
                     broadcast_children(ctx, &self.children, self.child_id_counter, Message::Stop);
                 }
             }
             Message::Log => {
-                println!("MasterActor received Log");
                 println!("Requests sent: {}", self.counter);
             }
             Message::SetTarget(target) => {
-                println!("MasterActor received SetTarget");
                 if !self.master {
                     //TODO:check if target correct
                     broadcast_children(
@@ -210,7 +203,6 @@ impl Actor<Message> for MasterActor {
                 }
             }
             Message::Help => {
-                println!("MasterActor received Help");
                 println!(
                     "--------------------------------------------------------------------------"
                 );
@@ -225,7 +217,7 @@ impl Actor<Message> for MasterActor {
                     "--------------------------------------------------------------------------"
                 );
             }
-            _ => println!("Error: Received invalid actor message"),
+            _ => println!("MasterActor received unknown message")
         }
     }
     fn start(&mut self, context: Context<Message>) {
