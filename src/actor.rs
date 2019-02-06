@@ -9,7 +9,10 @@ use crate::context::*;
 ///
 /// The type parameter represents the type of messages that will be passed among `Actor`s in this `ActorSystem`.
 /// It is strongly recommended to make use of an `enum` as message type to achieve higher flexibility.
-pub trait Actor<M> {
+pub trait Actor<M>
+where
+    M: Clone,
+{
     /// This function will be called exactly once, when the `Actor`is created.
     /// It is guaranteed to be called before the first execution of `handle`.
     fn start(&mut self, context: Context<M>);

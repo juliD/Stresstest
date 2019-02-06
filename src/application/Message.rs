@@ -4,13 +4,13 @@ pub enum Message {
     Log,
     ReportRequests(u64),
     Help,
-    IncomingTcpMessage(String),
     // MasterActor + WorkerActor
     Start,
     Stop,
     SetTarget(String),
     // TcpActor
-    StartListenTcp,
+    IncomingTcpMessage(String),
+    SendTcpMessage(u32, Box<Message>),
     // InputActor
     StartWatchInput,
 }
