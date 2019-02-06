@@ -167,10 +167,7 @@ impl Actor<Message> for MasterActor {
         //create TCPListener
         self.child_id_counter += 1;
         let ctx: &Context<Message> = self.context.as_ref().expect("");
-        let child_addr = ctx.register_actor(TcpListenActor {
-            context: None,
-            port: port,
-        });
+        let child_addr = ctx.register_actor(TcpListenActor::new(port));
         self.children.push_back(child_addr.clone());
         ctx.send(&child_addr, Message::StartListenTcp);
 
