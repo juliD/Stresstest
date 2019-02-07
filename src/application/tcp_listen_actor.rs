@@ -9,6 +9,7 @@ use actor_model::context::*;
 
 use crate::application::message::Message;
 use crate::application::message_serialization::*;
+use crate::application::tcp_connection::TcpConnection;
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -60,10 +61,13 @@ impl TcpListenActor {
                         match stream.try_clone() {
                             Ok(stream_clone) => {
                                 println!("cloned tcp stream");
-                                // self.connections.insert(0, s);
-                                sender.send(stream_clone).map_err(|error| {
-                                    println!("error sending TcpStream: {}", error)
-                                });
+                                // // self.connections.insert(0, s);
+                                // sender.send(stream_clone).map_err(|error| {
+                                //     println!("error sending TcpStream: {}", error)
+                                // });
+                                own_addr.send_self(Message::IncomingTcpConnection(TcpConnection(
+                                    stream_clone,
+                                )));
                                 println!("clone was sent through channel");
                                 let own_addr_clone = own_addr.clone();
                                 handle_connection(stream, own_addr_clone);
@@ -96,35 +100,39 @@ impl Actor<Message> for TcpListenActor {
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
 
         match message {
-            Message::TryAcceptConnection => {
-                match &self.connection_receiver {
-                    Some(recv) => {
-                        match recv.recv_timeout(Duration::from_millis(100)) {
-                            Ok(mut stream) => {
-                                println!("received stream");
-                                stream.write("start".as_bytes());
-                                self.connections.insert(0, stream);
-                            }
-                            Err(error) => (), //println!("{}", error)
-                        }
-                    }
-                    None => {
-                        println!("no message in receiver");
-                    }
-                }
-                ctx.send_self(Message::TryAcceptConnection);
+            // Message::TryAcceptConnection => {
+            //     match &self.connection_receiver {
+            //         Some(recv) => {
+            //             match recv.recv_timeout(Duration::from_millis(100)) {
+            //                 Ok(mut stream) => {
+            //                     println!("received stream");
+            //                     stream.write("start".as_bytes());
+            //                     self.connections.insert(0, stream);
+            //                 }
+            //                 Err(error) => (), //println!("{}", error)
+            //             }
+            //         }
+            //         None => {
+            //             println!("no message in receiver");
+            //         }
+            //     }
+            //     ctx.send_self(Message::TryAcceptConnection);
+            // }
+            Message::IncomingTcpConnection(connection) => {
+                // println!("TcpListenActor received IncomingTcpConnection");
+                self.connections.insert(0, connection.0);
             }
             Message::StartListenForTcp(master_addr) => {
                 println!("TcpListenActor received StartListenForTcp");
                 self.master_addr = Some(master_addr);
-                ctx.send_self(Message::TryAcceptConnection);
+                // ctx.send_self(Message::TryAcceptConnection);
                 self.listen_for_tcp();
             }
             Message::IncomingTcpMessage(str_message) => {
-                println!("TcpListenActor received IncomingTcpMessage");
+                // println!("TcpListenActor received IncomingTcpMessage");
                 match parse_message(str_message.as_ref()) {
                     Some(actor_message) => {
-                        println!("received tcp message: {}", str_message);
+                        // println!("received tcp message: {}", str_message);
                         match self.master_addr.as_ref() {
                             Some(addr) => ctx.send(&addr, actor_message),
                             None => println!("TcpActor has no master address to report to"),
@@ -183,7 +191,6 @@ where
     T: FnMut(&str),
 {
     loop {
-
         // TODO: shut down stream when EOF is read
         let mut buffer = [0; 512];
         // let mut vec = Vec::new();
@@ -196,6 +203,5 @@ where
         let message_to_pass_on = &(*message_removed_nulls);
         f(message_to_pass_on);
         // f(message_removed_nulls.unwrap().as_ref());
-
     }
 }

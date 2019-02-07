@@ -1,5 +1,6 @@
 extern crate actor_model;
 
+use crate::application::tcp_connection::TcpConnection;
 use actor_model::address::*;
 use std::io::BufWriter;
 use std::net::TcpStream;
@@ -18,8 +19,8 @@ pub enum Message {
     ConnectToMaster(Address<Message>),
     StartListenForTcp(Address<Message>),
     IncomingTcpMessage(String),
+    IncomingTcpConnection(TcpConnection),
     SendTcpMessage(u32, Box<Message>),
-    TryAcceptConnection,
     // InputActor
     StartWatchInput(Address<Message>),
 }

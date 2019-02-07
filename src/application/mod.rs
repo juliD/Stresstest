@@ -9,3 +9,4 @@ pub mod tcp_listen_actor;
 pub mod log_actor;
 pub mod worker_actor;
 pub mod input_actor;
+pub mod tcp_connection;
