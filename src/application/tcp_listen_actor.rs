@@ -21,20 +21,16 @@ use std::time::Duration;
 pub struct TcpListenActor {
     context: Option<Context<Message>>,
     port: u32,
-    connections: HashMap<u32, TcpStream>,
-    connections_id_counter: u32,
+    connections: Vec<TcpConnection>,
     master_addr: Option<Address<Message>>,
-    connection_receiver: Option<Receiver<TcpStream>>,
 }
 impl TcpListenActor {
     pub fn new(port: u32) -> TcpListenActor {
         TcpListenActor {
             context: None,
             port: port,
-            connections: HashMap::new(),
-            connections_id_counter: 0,
+            connections: Vec::new(),
             master_addr: None,
-            connection_receiver: None,
         }
     }
 
@@ -45,10 +41,6 @@ impl TcpListenActor {
 
         let port = self.port;
         let own_addr = ctx.own_address.clone();
-
-        let (sender, receiver) = channel::<TcpStream>();
-
-        self.connection_receiver = Some(receiver);
 
         thread::spawn(move || {
             let addr = format!("localhost:{}", port);
@@ -100,32 +92,13 @@ impl Actor<Message> for TcpListenActor {
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
 
         match message {
-            // Message::TryAcceptConnection => {
-            //     match &self.connection_receiver {
-            //         Some(recv) => {
-            //             match recv.recv_timeout(Duration::from_millis(100)) {
-            //                 Ok(mut stream) => {
-            //                     println!("received stream");
-            //                     stream.write("start".as_bytes());
-            //                     self.connections.insert(0, stream);
-            //                 }
-            //                 Err(error) => (), //println!("{}", error)
-            //             }
-            //         }
-            //         None => {
-            //             println!("no message in receiver");
-            //         }
-            //     }
-            //     ctx.send_self(Message::TryAcceptConnection);
-            // }
             Message::IncomingTcpConnection(connection) => {
                 // println!("TcpListenActor received IncomingTcpConnection");
-                self.connections.insert(0, connection.0);
+                self.connections.push(connection);
             }
             Message::StartListenForTcp(master_addr) => {
                 println!("TcpListenActor received StartListenForTcp");
                 self.master_addr = Some(master_addr);
-                // ctx.send_self(Message::TryAcceptConnection);
                 self.listen_for_tcp();
             }
             Message::IncomingTcpMessage(str_message) => {
@@ -141,21 +114,26 @@ impl Actor<Message> for TcpListenActor {
                     None => (),
                 };
             }
-            Message::SendTcpMessage(target, actor_message) => {
+            Message::SendTcpMessage(actor_message) => {
                 println!("TcpListenActor received SendTcpMessage");
-                match self.connections.get(&target) {
-                    Some(mut stream) => {
-                        stream.write(serialize_message(*actor_message).as_bytes());
-                        stream.flush().unwrap();
-                    }
-                    None => println!("unknown target"),
-                };
+                let message_str = serialize_message(*actor_message);
+                let message_bytes = message_str.as_bytes();
+                for stream in self.connections.iter_mut() {
+                    stream.0.write(message_bytes);
+                    stream.0.flush().unwrap();
+                }
+                //     Some(mut stream) => {
+                //         stream.write(serialize_message(*actor_message).as_bytes());
+                //         stream.flush().unwrap();
+                //     }
+                //     None => println!("unknown target"),
+                // };
             }
             Message::ConnectToMaster(master_addr) => {
                 println!("TcpListenActor received ConnectToMaster");
                 self.master_addr = Some(master_addr);
                 match TcpStream::connect("localhost:3333") {
-                    Ok(mut stream) => {
+                    Ok(stream) => {
                         // self.connections.insert(0, stream);
                         let own_addr_clone = self
                             .context
@@ -165,7 +143,7 @@ impl Actor<Message> for TcpListenActor {
                             .clone();
                         match stream.try_clone() {
                             Ok(stream_clone) => {
-                                self.connections.insert(0, stream_clone);
+                                self.connections.push(TcpConnection(stream_clone));
                                 handle_connection(stream, own_addr_clone);
                             }
                             Err(error) => println!("could not clone tcp stream: {}", error),

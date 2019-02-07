@@ -14,7 +14,7 @@ pub fn parse_message(message: &str) -> Option<Message> {
             match input_part_2 {
                 // TODO: handle parsing error
                 Some(param) => {
-                    let int_param = match param.parse() {
+                    let int_param: Option<u64> = match param.parse() {
                         Ok(p) => Some(p),
                         Err(error) => {
                             println!("could not parse argument: {}", error);

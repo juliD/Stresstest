@@ -2,8 +2,6 @@ extern crate actor_model;
 
 use crate::application::tcp_connection::TcpConnection;
 use actor_model::address::*;
-use std::io::BufWriter;
-use std::net::TcpStream;
 
 #[derive(Clone)]
 pub enum Message {
@@ -20,7 +18,7 @@ pub enum Message {
     StartListenForTcp(Address<Message>),
     IncomingTcpMessage(String),
     IncomingTcpConnection(TcpConnection),
-    SendTcpMessage(u32, Box<Message>),
+    SendTcpMessage(Box<Message>),
     // InputActor
     StartWatchInput(Address<Message>),
 }

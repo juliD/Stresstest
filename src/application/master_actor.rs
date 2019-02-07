@@ -1,15 +1,11 @@
 use std::collections::LinkedList;
-use std::io::Write;
-use std::net::TcpStream;
 
 use actor_model::actor::*;
 use actor_model::address::*;
 use actor_model::context::*;
 
 use crate::application::address_parsing::*;
-use crate::application::input_actor::InputActor;
 use crate::application::message::Message;
-use crate::application::message_serialization::*;
 use crate::application::worker_actor::WorkerActor;
 
 pub struct MasterActor {
@@ -37,37 +33,12 @@ impl MasterActor {
             input_actor_addr: input_actor_addr,
         }
     }
-    // fn send_slaves(&self, message: Message) {
-    //TODO: send to all known slaves
-    // match TcpStream::connect("localhost:3333") {
-    //     Ok(mut stream) => {
-    //         stream.write(message.as_bytes()).unwrap();
-    //         stream.flush().unwrap();
-    //     }
-    //     Err(e) => {
-    //         println!("Failed to connect: {}", e);
-    //     }
-    // }
-    // }
 
     fn send_tcp_message(&self, target: u32, message: Message) {
         println!("MasterActor send_tcp_message");
         self.tcp_actor_addr
-            .send(Message::SendTcpMessage(target, Box::new(message)), None);
+            .send(Message::SendTcpMessage(Box::new(message)), None);
     }
-    // fn send_master_count(&self) {
-    //     match TcpStream::connect("localhost:3001") {
-    //         Ok(mut stream) => {
-    //             stream
-    //                 .write(serialize_message(Message::ReportRequests(1)).as_bytes())
-    //                 .unwrap();
-    //             stream.flush().unwrap();
-    //         }
-    //         Err(e) => {
-    //             println!("Failed to connect: {}", e);
-    //         }
-    //     }
-    // }
 }
 
 fn broadcast_children(
