@@ -6,6 +6,8 @@ extern crate reqwest;
 use actor_model::actor::*;
 use actor_model::address::*;
 use actor_model::context::*;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use crate::application::message::Message;
 use crate::application::message_serialization::*;
@@ -20,34 +22,29 @@ use std::time::Duration;
 pub struct TcpListenActor {
     context: Option<Context<Message>>,
     port: u32,
-    connections: HashMap<u32, TcpStream>,
     connections_id_counter: u32,
     master_addr: Option<Address<Message>>,
-    connection_receiver: Option<Receiver<TcpStream>>,
+    connections: Arc<Mutex<Vec<TcpStream>>>,
 }
 impl TcpListenActor {
     pub fn new(port: u32) -> TcpListenActor {
         TcpListenActor {
             context: None,
             port: port,
-            connections: HashMap::new(),
             connections_id_counter: 0,
             master_addr: None,
-            connection_receiver: None,
+            connections: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     fn listen_for_tcp(&mut self) {
-        println!("master listening on port {}", self.port);
+        println!("tcp actor listening on port {}", self.port);
 
         let ctx = self.context.as_ref().expect("unwrapping context");
 
         let port = self.port;
         let own_addr = ctx.own_address.clone();
-
-        let (sender, receiver) = channel::<TcpStream>();
-
-        self.connection_receiver = Some(receiver);
+        let connections = Arc::clone(&self.connections);
 
         thread::spawn(move || {
             let addr = format!("localhost:{}", port);
@@ -59,14 +56,10 @@ impl TcpListenActor {
                     Ok(stream) => {
                         match stream.try_clone() {
                             Ok(stream_clone) => {
-                                println!("cloned tcp stream");
-                                // self.connections.insert(0, s);
-                                sender.send(stream_clone).map_err(|error| {
-                                    println!("error sending TcpStream: {}", error)
-                                });
-                                println!("clone was sent through channel");
-                                let own_addr_clone = own_addr.clone();
-                                handle_connection(stream, own_addr_clone);
+                                println!("cloning tcp stream");
+                                // save cloned TCP stream to be able to send and receive simultaneously
+                                connections.lock().unwrap().push(stream_clone);
+                                handle_connection(stream, own_addr);
                             }
                             Err(error) => println!("could not clone tcp stream: {}", error),
                         };
@@ -96,7 +89,7 @@ impl Actor<Message> for TcpListenActor {
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
 
         match message {
-            Message::TryAcceptConnection => {
+            /* Message::TryAcceptConnection => {
                 match &self.connection_receiver {
                     Some(recv) => {
                         match recv.recv_timeout(Duration::from_millis(100)) {
@@ -113,11 +106,11 @@ impl Actor<Message> for TcpListenActor {
                     }
                 }
                 ctx.send_self(Message::TryAcceptConnection);
-            }
+            } */
             Message::StartListenForTcp(master_addr) => {
                 println!("TcpListenActor received StartListenForTcp");
                 self.master_addr = Some(master_addr);
-                ctx.send_self(Message::TryAcceptConnection);
+                // ctx.send_self(Message::TryAcceptConnection);
                 self.listen_for_tcp();
             }
             Message::IncomingTcpMessage(str_message) => {
@@ -135,13 +128,19 @@ impl Actor<Message> for TcpListenActor {
             }
             Message::SendTcpMessage(target, actor_message) => {
                 println!("TcpListenActor received SendTcpMessage");
-                match self.connections.get(&target) {
+                let connections = Arc::clone(&self.connections);
+                let mut connections_unwrapped = connections.lock().unwrap();
+                for mut stream in *connections_unwrapped {
+                    stream.write(serialize_message(*actor_message).as_bytes());
+                    stream.flush().unwrap();
+                }
+                /* match self.connections.get(&target) {
                     Some(mut stream) => {
                         stream.write(serialize_message(*actor_message).as_bytes());
                         stream.flush().unwrap();
                     }
                     None => println!("unknown target"),
-                };
+                }; */
             }
             Message::ConnectToMaster(master_addr) => {
                 println!("TcpListenActor received ConnectToMaster");
@@ -157,7 +156,8 @@ impl Actor<Message> for TcpListenActor {
                             .clone();
                         match stream.try_clone() {
                             Ok(stream_clone) => {
-                                self.connections.insert(0, stream_clone);
+                                let mut connections = self.connections.lock().unwrap();
+                                connections.push(stream_clone);
                                 handle_connection(stream, own_addr_clone);
                             }
                             Err(error) => println!("could not clone tcp stream: {}", error),
@@ -183,7 +183,6 @@ where
     T: FnMut(&str),
 {
     loop {
-
         // TODO: shut down stream when EOF is read
         let mut buffer = [0; 512];
         // let mut vec = Vec::new();
@@ -196,6 +195,5 @@ where
         let message_to_pass_on = &(*message_removed_nulls);
         f(message_to_pass_on);
         // f(message_removed_nulls.unwrap().as_ref());
-
     }
 }
