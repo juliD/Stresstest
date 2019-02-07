@@ -4,7 +4,6 @@ use actor_model::context::*;
 
 use crate::application::message::Message;
 
-
 pub struct WorkerActor {
     pub id: u32,
     pub context: Option<Context<Message>>,
@@ -21,7 +20,7 @@ impl WorkerActor {
 }
 
 impl Actor<Message> for WorkerActor {
-    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
+    fn handle(&mut self, message: Message, _origin_address: Option<Address<Message>>) {
         match message {
             Message::Start => {
                 if self.status {
@@ -29,10 +28,12 @@ impl Actor<Message> for WorkerActor {
                     return;
                 }
                 let ctx = self.context.as_ref().expect("unwrapping context");
-                let paddr = ctx.parent_address.as_ref().expect("unwrapping parent address");
-                let own_addr = ctx.own_address.clone();
+                let paddr = ctx
+                    .parent_address
+                    .as_ref()
+                    .expect("unwrapping parent address");
 
-                self.request();
+                self.request().map_err(|e| println!("{}", e));
                 ctx.send(&paddr, Message::ReportRequests(1));
                 ctx.send(&ctx.own_address, Message::Start);
             }

@@ -19,7 +19,7 @@ pub fn run() {
     ActorSystem::start(move || {
         let input_actor = ActorSystem::register_actor(InputActor { context: None }, None);
         let tcp_actor = ActorSystem::register_actor(TcpListenActor::new(3333), None);
-        let master_actor = ActorSystem::register_actor(
+        ActorSystem::register_actor(
             MasterActor::new(is_master_bool, tcp_actor, Some(input_actor)),
             None,
         );

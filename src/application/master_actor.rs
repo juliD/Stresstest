@@ -34,7 +34,7 @@ impl MasterActor {
         }
     }
 
-    fn send_tcp_message(&self, target: u32, message: Message) {
+    fn send_tcp_message(&self,message: Message) {
         self.tcp_actor_addr
             .send(Message::SendTcpMessage(Box::new(message)), None);
     }
@@ -60,7 +60,7 @@ fn broadcast_children(
 }
 
 impl Actor<Message> for MasterActor {
-    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
+    fn handle(&mut self, message: Message, _origin_address: Option<Address<Message>>) {
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
 
         match message {
@@ -68,13 +68,13 @@ impl Actor<Message> for MasterActor {
                 if self.master {
                     self.counter += count;
                 } else {
-                    self.send_tcp_message(0, Message::ReportRequests(count));
+                    self.send_tcp_message(Message::ReportRequests(count));
                 }
             }
             Message::Start => {
                 if self.master {
                     self.counter = 0;
-                    self.send_tcp_message(0, Message::Start);
+                    self.send_tcp_message(Message::Start);
                 } else {
                     println!("MasterActor starting");
                     broadcast_children(ctx, &self.workers, self.child_id_counter, Message::Start);
@@ -83,7 +83,7 @@ impl Actor<Message> for MasterActor {
             Message::Stop => {
                 if self.master {
                     self.counter = 0;
-                    self.send_tcp_message(0, Message::Stop);
+                    self.send_tcp_message(Message::Stop);
                 } else {
                     println!("MasterActor stopped");
                     broadcast_children(ctx, &self.workers, self.child_id_counter, Message::Stop);
@@ -166,7 +166,7 @@ impl Actor<Message> for MasterActor {
         } else {
             //create as many actors as cores available
             let num = num_cpus::get();
-            for x in 0..num {
+            for _ in 0..num {
                 self.child_id_counter += 1;
                 let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
                 let child_addr = ctx.register_actor(WorkerActor {

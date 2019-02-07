@@ -15,11 +15,9 @@ use crate::application::tcp_connection::TcpConnection;
 use bufstream::*;
 use std::collections::HashMap;
 use std::io::BufRead;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
 
 pub struct TcpListenActor {
     context: Option<Context<Message>>,
@@ -102,7 +100,7 @@ fn handle_connection(connection: TcpConnection, addr: Address<Message>, connecti
 }
 
 impl Actor<Message> for TcpListenActor {
-    fn handle(&mut self, message: Message, origin_address: Option<Address<Message>>) {
+    fn handle(&mut self, message: Message, _origin_address: Option<Address<Message>>) {
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
 
         match message {
@@ -137,7 +135,10 @@ impl Actor<Message> for TcpListenActor {
                 let message_bytes = message_str.as_bytes();
                 // println!("  writing message to {} streams...", self.connections.len());
                 for connection in self.connections.values_mut() {
-                    connection.0.write(message_bytes);
+                    connection
+                        .0
+                        .write(message_bytes)
+                        .map_err(|e| println!("{}", e));
                     connection.0.flush().unwrap();
                 }
                 // println!("  done writing");
