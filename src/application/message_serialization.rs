@@ -34,30 +34,31 @@ pub fn parse_message(message: &str) -> Option<Message> {
                         Some(Message::SetTarget(String::from(address_raw)))
                     } else {
                         // TODO: better error handling
-                        println!("invalid target address");
+                        println!("invalid target address: {}", message);
                         None
                     }
                 }
                 None => {
-                    println!("could not parse target message");
+                    println!("could not parse target message: {}", message);
                     None
                 }
             }
         }
         _ => {
-            println!("could not parse message");
+            println!("could not parse message: {}", message);
             None
         }
     }
 }
 
 pub fn serialize_message(message: Message) -> String {
-    match message {
+    let serialized = match message {
         Message::Start => "start".to_owned(),
         Message::Stop => "stop".to_owned(),
         Message::Log => "log".to_owned(),
         Message::Help => "help".to_owned(),
         Message::ReportRequests(count) => format!("reportrequests {}", count),
         _ => panic!("failed to serialize actor message"),
-    }
+    };
+    return format!("{}\n", serialized);
 }

@@ -35,7 +35,6 @@ impl MasterActor {
     }
 
     fn send_tcp_message(&self, target: u32, message: Message) {
-        println!("MasterActor send_tcp_message");
         self.tcp_actor_addr
             .send(Message::SendTcpMessage(Box::new(message)), None);
     }

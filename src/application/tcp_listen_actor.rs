@@ -1,4 +1,5 @@
 extern crate actor_model;
+extern crate bufstream;
 extern crate byteorder;
 extern crate lazy_static;
 extern crate reqwest;
@@ -11,7 +12,9 @@ use crate::application::message::Message;
 use crate::application::message_serialization::*;
 use crate::application::tcp_connection::TcpConnection;
 
+use bufstream::*;
 use std::collections::HashMap;
+use std::io::BufRead;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -115,19 +118,15 @@ impl Actor<Message> for TcpListenActor {
                 };
             }
             Message::SendTcpMessage(actor_message) => {
-                println!("TcpListenActor received SendTcpMessage");
+                // println!("TcpListenActor received SendTcpMessage");
                 let message_str = serialize_message(*actor_message);
                 let message_bytes = message_str.as_bytes();
+                // println!("  writing message to {} streams...", self.connections.len());
                 for stream in self.connections.iter_mut() {
                     stream.0.write(message_bytes);
                     stream.0.flush().unwrap();
                 }
-                //     Some(mut stream) => {
-                //         stream.write(serialize_message(*actor_message).as_bytes());
-                //         stream.flush().unwrap();
-                //     }
-                //     None => println!("unknown target"),
-                // };
+                // println!("  done writing");
             }
             Message::ConnectToMaster(master_addr) => {
                 println!("TcpListenActor received ConnectToMaster");
@@ -164,22 +163,32 @@ impl Actor<Message> for TcpListenActor {
     }
 }
 
-pub fn handle_messages<T>(mut conn: TcpStream, mut f: T)
+pub fn handle_messages<T>(mut stream: TcpStream, mut f: T)
 where
     T: FnMut(&str),
 {
-    loop {
-        // TODO: shut down stream when EOF is read
-        let mut buffer = [0; 512];
-        // let mut vec = Vec::new();
-        conn.read(&mut buffer).unwrap();
-        let message_as_string = String::from_utf8_lossy(&buffer[..]);
-        let message_removed_nulls = message_as_string.trim_right_matches(char::from(0));
-        //let message_removed_nulls = String::from_utf8(buffer[..].to_vec());
+    let mut reader = BufStream::new(stream);
+    let mut input: String = String::new();
 
-        // TODO: Wow, this looks weird.
-        let message_to_pass_on = &(*message_removed_nulls);
-        f(message_to_pass_on);
-        // f(message_removed_nulls.unwrap().as_ref());
+    loop {
+        input.clear();
+        let input_size = match (&mut reader).read_line(&mut input) {
+            Ok(s) => {
+                // println!("read tcp msg of size {}: {}", s, input);
+                s
+            }
+            Err(e) => {
+                println!("{}", e);
+                0
+            }
+        };
+
+        if input_size == 0 {
+            println!("closing stream");
+            // TODO: close stream for real, remove from vector
+            break;
+        };
+
+        f(input.clone().as_ref());
     }
 }
