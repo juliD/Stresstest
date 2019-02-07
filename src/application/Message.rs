@@ -19,6 +19,7 @@ pub enum Message {
     IncomingTcpMessage(String),
     IncomingTcpConnection(TcpConnection),
     SendTcpMessage(Box<Message>),
+    StreamDisconnected(u32),
     // InputActor
     StartWatchInput(Address<Message>),
 }

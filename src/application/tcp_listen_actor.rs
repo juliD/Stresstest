@@ -16,7 +16,7 @@ use bufstream::*;
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
@@ -24,7 +24,8 @@ use std::time::Duration;
 pub struct TcpListenActor {
     context: Option<Context<Message>>,
     port: u32,
-    connections: Vec<TcpConnection>,
+    connections: HashMap<u32, TcpConnection>,
+    connection_id_counter: u32,
     master_addr: Option<Address<Message>>,
 }
 impl TcpListenActor {
@@ -32,9 +33,15 @@ impl TcpListenActor {
         TcpListenActor {
             context: None,
             port: port,
-            connections: Vec::new(),
+            connections: HashMap::new(),
+            connection_id_counter: 0,
             master_addr: None,
         }
+    }
+
+    fn get_new_connection_id(&mut self) -> u32 {
+        self.connection_id_counter += 1;
+        self.connection_id_counter
     }
 
     fn listen_for_tcp(&mut self) {
@@ -63,9 +70,6 @@ impl TcpListenActor {
                                 own_addr.send_self(Message::IncomingTcpConnection(TcpConnection(
                                     stream_clone,
                                 )));
-                                println!("clone was sent through channel");
-                                let own_addr_clone = own_addr.clone();
-                                handle_connection(stream, own_addr_clone);
                             }
                             Err(error) => println!("could not clone tcp stream: {}", error),
                         };
@@ -80,13 +84,20 @@ impl TcpListenActor {
     }
 }
 
-fn handle_connection(stream: TcpStream, addr: Address<Message>) {
+fn handle_connection(connection: TcpConnection, addr: Address<Message>, connection_id: u32) {
     thread::spawn(move || {
         println!("spawned new thread handling tcp stream");
-        handle_messages(stream, |message: &str| {
-            // println!("received tcp message, going to send actor message");
-            addr.send_self(Message::IncomingTcpMessage(message.to_owned()));
-        });
+        handle_messages(
+            connection,
+            |message: &str| {
+                // println!("received tcp message, going to send actor message");
+                addr.send_self(Message::IncomingTcpMessage(message.to_owned()));
+            },
+            || {
+                println!("closing stream");
+                addr.send_self(Message::StreamDisconnected(connection_id));
+            },
+        );
     });
 }
 
@@ -97,7 +108,10 @@ impl Actor<Message> for TcpListenActor {
         match message {
             Message::IncomingTcpConnection(connection) => {
                 // println!("TcpListenActor received IncomingTcpConnection");
-                self.connections.push(connection);
+                let own_addr = ctx.own_address.clone();
+                let conn_id = self.get_new_connection_id();
+                self.connections.insert(conn_id, connection.clone());
+                handle_connection(connection, own_addr, conn_id);
             }
             Message::StartListenForTcp(master_addr) => {
                 println!("TcpListenActor received StartListenForTcp");
@@ -122,9 +136,9 @@ impl Actor<Message> for TcpListenActor {
                 let message_str = serialize_message(*actor_message);
                 let message_bytes = message_str.as_bytes();
                 // println!("  writing message to {} streams...", self.connections.len());
-                for stream in self.connections.iter_mut() {
-                    stream.0.write(message_bytes);
-                    stream.0.flush().unwrap();
+                for connection in self.connections.values_mut() {
+                    connection.0.write(message_bytes);
+                    connection.0.flush().unwrap();
                 }
                 // println!("  done writing");
             }
@@ -133,25 +147,19 @@ impl Actor<Message> for TcpListenActor {
                 self.master_addr = Some(master_addr);
                 match TcpStream::connect("localhost:3333") {
                     Ok(stream) => {
-                        // self.connections.insert(0, stream);
-                        let own_addr_clone = self
-                            .context
-                            .as_ref()
-                            .expect("unwrap context")
-                            .own_address
-                            .clone();
-                        match stream.try_clone() {
-                            Ok(stream_clone) => {
-                                self.connections.push(TcpConnection(stream_clone));
-                                handle_connection(stream, own_addr_clone);
-                            }
-                            Err(error) => println!("could not clone tcp stream: {}", error),
-                        }
+                        let connection = TcpConnection(stream);
+                        let own_addr = ctx.own_address.clone();
+                        let conn_id = self.get_new_connection_id();
+                        self.connections.insert(conn_id, connection.clone());
+                        handle_connection(connection, own_addr, conn_id);
                     }
                     Err(e) => {
                         println!("Failed to connect: {}", e);
                     }
                 };
+            }
+            Message::StreamDisconnected(connection_id) => {
+                self.connections.remove(&connection_id);
             }
             _ => println!("TcpListenActor received unknown message"),
         }
@@ -163,11 +171,15 @@ impl Actor<Message> for TcpListenActor {
     }
 }
 
-pub fn handle_messages<T>(mut stream: TcpStream, mut f: T)
-where
+pub fn handle_messages<T, Q>(
+    connection: TcpConnection,
+    mut handle_message: T,
+    mut handle_disconnect: Q,
+) where
     T: FnMut(&str),
+    Q: FnMut(),
 {
-    let mut reader = BufStream::new(stream);
+    let mut reader = BufStream::new(connection.0);
     let mut input: String = String::new();
 
     loop {
@@ -184,11 +196,16 @@ where
         };
 
         if input_size == 0 {
-            println!("closing stream");
-            // TODO: close stream for real, remove from vector
             break;
         };
 
-        f(input.clone().as_ref());
+        handle_message(input.clone().as_ref());
     }
+    match reader.into_inner() {
+        Ok(s) => {
+            s.shutdown(Shutdown::Both).map_err(|e| println!("{}", e));
+        }
+        Err(e) => println!("{}", e),
+    }
+    handle_disconnect();
 }
