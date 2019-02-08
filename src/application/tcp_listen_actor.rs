@@ -11,7 +11,9 @@ use actor_model::context::*;
 use crate::application::message::Message;
 use crate::application::message_serialization::*;
 use crate::application::tcp_connection::TcpConnection;
+use crate::application::config_actor::AppConfig;
 
+use std::net::{SocketAddr};
 use bufstream::*;
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -25,6 +27,7 @@ pub struct TcpListenActor {
     connections: HashMap<u32, TcpConnection>,
     connection_id_counter: u32,
     master_addr: Option<Address<Message>>,
+    config: Option<AppConfig>,
 }
 impl TcpListenActor {
     pub fn new(port: u32) -> TcpListenActor {
@@ -34,6 +37,7 @@ impl TcpListenActor {
             connections: HashMap::new(),
             connection_id_counter: 0,
             master_addr: None,
+            config: None,
         }
     }
 
@@ -49,9 +53,10 @@ impl TcpListenActor {
 
         let port = self.port;
         let own_addr = ctx.own_address.clone();
+        let master = self.config.as_ref().expect("unwrapping config").master.clone();
+        thread::spawn(move || {        
 
-        thread::spawn(move || {
-            let addr = format!("localhost:{}", port);
+            let addr = format!("{}", master);
             let listener = TcpListener::bind(addr).unwrap();
             // accept connections and process them, spawning a new thread for each one
             for stream in listener.incoming() {
@@ -146,7 +151,9 @@ impl Actor<Message> for TcpListenActor {
             Message::ConnectToMaster(master_addr) => {
                 println!("TcpListenActor received ConnectToMaster");
                 self.master_addr = Some(master_addr);
-                match TcpStream::connect("localhost:3333") {
+
+                let config = self.config.as_ref().expect("unwrapping config");
+                match TcpStream::connect(config.master.clone()) {
                     Ok(stream) => {
                         let connection = TcpConnection(stream);
                         let own_addr = ctx.own_address.clone();
@@ -158,6 +165,9 @@ impl Actor<Message> for TcpListenActor {
                         println!("Failed to connect: {}", e);
                     }
                 };
+            }
+            Message::Config(config) =>{
+                self.config = Some(config);
             }
             Message::StreamDisconnected(connection_id) => {
                 self.connections.remove(&connection_id);

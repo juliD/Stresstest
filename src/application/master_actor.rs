@@ -1,4 +1,5 @@
 use std::collections::LinkedList;
+use std::net::IpAddr;
 
 use actor_model::actor::*;
 use actor_model::address::*;
@@ -98,7 +99,7 @@ impl Actor<Message> for MasterActor {
                     self.send_tcp_message(Message::ReportRequests(self.counter));
                     self.counter = 0;
                 }
-            }
+            }            
             Message::Log => {
                 println!("Requests sent: {}", self.counter);
             }
@@ -120,11 +121,7 @@ impl Actor<Message> for MasterActor {
                     }
                 }
             }
-            Message::Config(config) =>{
-                println!("Got Config!");
-                //TODO:check incoming ip addresses
-
-            }
+            
             Message::Help => {
                 println!(
                     "--------------------------------------------------------------------------"
@@ -149,17 +146,18 @@ impl Actor<Message> for MasterActor {
 
 
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
-
+        //get Config
+        ctx.send(
+            &self.config_actor_addr,
+            Message::StartWatchingConfig(ctx.own_address.clone()),
+        );
+        
         if self.master {
             match self.input_actor_addr.as_ref() {
                 Some(addr) => ctx.send(&addr, Message::StartWatchInput(ctx.own_address.clone())),
                 None => println!("MasterActor has no InputActor"),
             }
-            //get Config
-            ctx.send(
-                &self.config_actor_addr,
-                Message::StartWatchingConfig(ctx.own_address.clone()),
-            );
+            
             // start listening for worker connections
             ctx.send(
                 &self.tcp_actor_addr,

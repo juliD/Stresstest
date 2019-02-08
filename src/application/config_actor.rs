@@ -13,7 +13,6 @@ use std::sync::RwLock;
 use notify::{RecommendedWatcher, DebouncedEvent, Watcher, RecursiveMode};
 use std::sync::mpsc::channel;
 use std::time::Duration;
-use std::str::FromStr;
 use std::net::{SocketAddr};
 
 const CONFIG_FILE_NAME: &str = "Settings";
@@ -25,8 +24,8 @@ const CONFIG_SOCKET_DELIMITER: &str = ",";
 
 #[derive(Clone)]
 pub struct AppConfig {
-    master: SocketAddr,
-    hosts: Vec<SocketAddr>,
+    pub master: SocketAddr,
+    pub hosts: Vec<SocketAddr>,
 }
 
 lazy_static! {
@@ -44,14 +43,16 @@ pub struct ConfigActor{
     config: AppConfig,
     context: Option<Context<Message>>,
     master_addr: Option<Address<Message>>,
+    tcp_addr: Address<Message>
 }
 
 impl ConfigActor{
-    pub fn new() -> ConfigActor{
+    pub fn new(tcp: Address<Message>) -> ConfigActor{
         ConfigActor{
             config: parse_config(),
             context: None,
             master_addr: None,
+            tcp_addr: tcp,
         }
     }
     pub fn watch_config(&mut self){
@@ -85,17 +86,12 @@ impl ConfigActor{
 
 impl Actor<Message> for ConfigActor{
     fn handle(&mut self, message: Message, _origin_address: Option<Address<Message>>) {
-        let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
+        
 
         match message{
             Message::StartWatchingConfig(master_addr) => {
                 println!("ConfigActor received StartWatchingConfig");
-                self.master_addr = Some(master_addr);
-                
-                match self.master_addr.as_ref() {
-                    Some(addr) => ctx.send(&addr, Message::Config(self.config.clone())),
-                    None => println!("ConfigActor has no master address to report to"),
-                };
+                self.master_addr = Some(master_addr);               
                 self.watch_config();
             }
             _ => println!("ConfigActor received unknown message"),
@@ -105,11 +101,9 @@ impl Actor<Message> for ConfigActor{
         println!("init ConfigActor");
 
         self.context = Some(context);
+
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
-        match self.master_addr.as_ref() {
-            Some(addr) => ctx.send(&addr, Message::Config(self.config.clone())),
-            None => println!("ConfigActor has no master address to report to"),
-        };
+        ctx.send(&self.tcp_addr, Message::Config(self.config.clone()));
     }
 }
 
