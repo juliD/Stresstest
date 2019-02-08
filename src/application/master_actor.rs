@@ -73,7 +73,7 @@ impl Actor<Message> for MasterActor {
                     self.counter += count;
                 } else {
                     self.counter += count;
-                    if self.counter>=30{                                              
+                    if self.counter>=50{                                              
                         self.send_tcp_message(Message::ReportRequests(self.counter));
                         self.counter = 0; 
                     }
