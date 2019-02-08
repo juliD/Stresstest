@@ -1,5 +1,4 @@
 use std::collections::LinkedList;
-use std::net::IpAddr;
 
 use actor_model::actor::*;
 use actor_model::address::*;
@@ -8,7 +7,6 @@ use actor_model::context::*;
 use crate::application::address_parsing::*;
 use crate::application::message::Message;
 use crate::application::worker_actor::WorkerActor;
-use crate::application::config_actor::AppConfig;
 
 pub struct MasterActor {
     pub workers: LinkedList<Address<Message>>,

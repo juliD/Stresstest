@@ -8,12 +8,11 @@ use actor_model::actor::*;
 use actor_model::address::*;
 use actor_model::context::*;
 
+use crate::application::config_actor::AppConfig;
 use crate::application::message::Message;
 use crate::application::message_serialization::*;
 use crate::application::tcp_connection::TcpConnection;
-use crate::application::config_actor::AppConfig;
 
-use std::net::{SocketAddr};
 use bufstream::*;
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -21,7 +20,7 @@ use std::io::Write;
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::thread;
 
-pub struct TcpListenActor {
+pub struct TcpActor {
     context: Option<Context<Message>>,
     port: u32,
     connections: HashMap<u32, TcpConnection>,
@@ -29,9 +28,9 @@ pub struct TcpListenActor {
     master_addr: Option<Address<Message>>,
     config: Option<AppConfig>,
 }
-impl TcpListenActor {
-    pub fn new(port: u32) -> TcpListenActor {
-        TcpListenActor {
+impl TcpActor {
+    pub fn new(port: u32) -> TcpActor {
+        TcpActor {
             context: None,
             port: port,
             connections: HashMap::new(),
@@ -51,11 +50,14 @@ impl TcpListenActor {
 
         let ctx = self.context.as_ref().expect("unwrapping context");
 
-        let port = self.port;
         let own_addr = ctx.own_address.clone();
-        let master = self.config.as_ref().expect("unwrapping config").master.clone();
-        thread::spawn(move || {        
-
+        let master = self
+            .config
+            .as_ref()
+            .expect("unwrapping config")
+            .master
+            .clone();
+        thread::spawn(move || {
             let addr = format!("{}", master);
             let listener = TcpListener::bind(addr).unwrap();
             // accept connections and process them, spawning a new thread for each one
@@ -66,10 +68,6 @@ impl TcpListenActor {
                         match stream.try_clone() {
                             Ok(stream_clone) => {
                                 println!("cloned tcp stream");
-                                // // self.connections.insert(0, s);
-                                // sender.send(stream_clone).map_err(|error| {
-                                //     println!("error sending TcpStream: {}", error)
-                                // });
                                 own_addr.send_self(Message::IncomingTcpConnection(TcpConnection(
                                     stream_clone,
                                 )));
@@ -84,6 +82,77 @@ impl TcpListenActor {
                 }
             }
         });
+    }
+}
+
+impl Actor<Message> for TcpActor {
+    fn handle(&mut self, message: Message, _origin_address: Option<Address<Message>>) {
+        let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
+
+        match message {
+            Message::IncomingTcpConnection(connection) => {
+                let own_addr = ctx.own_address.clone();
+                let conn_id = self.get_new_connection_id();
+                self.connections.insert(conn_id, connection.clone());
+                handle_connection(connection, own_addr, conn_id);
+            }
+            Message::StartListenForTcp(master_addr) => {
+                self.master_addr = Some(master_addr);
+                self.listen_for_tcp();
+            }
+            Message::IncomingTcpMessage(str_message) => {
+                match parse_message(str_message.as_ref()) {
+                    Some(actor_message) => {
+                        // println!("received tcp message: {}", str_message);
+                        match self.master_addr.as_ref() {
+                            Some(addr) => ctx.send(&addr, actor_message),
+                            None => println!("TcpActor has no master address to report to"),
+                        };
+                    }
+                    None => (),
+                };
+            }
+            Message::SendTcpMessage(actor_message) => {
+                let message_str = serialize_message(*actor_message);
+                let message_bytes = message_str.as_bytes();
+                // println!("  writing message to {} streams...", self.connections.len());
+                for connection in self.connections.values_mut() {
+                    connection
+                        .0
+                        .write(message_bytes)
+                        .map_err(|e| println!("{}", e));
+                    connection.0.flush().unwrap();
+                }
+                // println!("  done writing");
+            }
+            Message::ConnectToMaster(master_addr) => {
+                self.master_addr = Some(master_addr);
+
+                let config = self.config.as_ref().expect("unwrapping config");
+                match TcpStream::connect(config.master.clone()) {
+                    Ok(stream) => {
+                        let connection = TcpConnection(stream);
+                        let own_addr = ctx.own_address.clone();
+                        let conn_id = self.get_new_connection_id();
+                        self.connections.insert(conn_id, connection.clone());
+                        handle_connection(connection, own_addr, conn_id);
+                    }
+                    Err(e) => {
+                        println!("Failed to connect: {}", e);
+                    }
+                };
+            }
+            Message::Config(config) => {
+                self.config = Some(config);
+            }
+            Message::StreamDisconnected(connection_id) => {
+                self.connections.remove(&connection_id);
+            }
+            _ => println!("TcpActor received unknown message"),
+        }
+    }
+    fn start(&mut self, context: Context<Message>) {
+        self.context = Some(context);
     }
 }
 
@@ -102,84 +171,6 @@ fn handle_connection(connection: TcpConnection, addr: Address<Message>, connecti
             },
         );
     });
-}
-
-impl Actor<Message> for TcpListenActor {
-    fn handle(&mut self, message: Message, _origin_address: Option<Address<Message>>) {
-        let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
-
-        match message {
-            Message::IncomingTcpConnection(connection) => {
-                // println!("TcpListenActor received IncomingTcpConnection");
-                let own_addr = ctx.own_address.clone();
-                let conn_id = self.get_new_connection_id();
-                self.connections.insert(conn_id, connection.clone());
-                handle_connection(connection, own_addr, conn_id);
-            }
-            Message::StartListenForTcp(master_addr) => {
-                println!("TcpListenActor received StartListenForTcp");
-                self.master_addr = Some(master_addr);
-                self.listen_for_tcp();
-            }
-            Message::IncomingTcpMessage(str_message) => {
-                // println!("TcpListenActor received IncomingTcpMessage");
-                match parse_message(str_message.as_ref()) {
-                    Some(actor_message) => {
-                        // println!("received tcp message: {}", str_message);
-                        match self.master_addr.as_ref() {
-                            Some(addr) => ctx.send(&addr, actor_message),
-                            None => println!("TcpActor has no master address to report to"),
-                        };
-                    }
-                    None => (),
-                };
-            }
-            Message::SendTcpMessage(actor_message) => {
-                // println!("TcpListenActor received SendTcpMessage");
-                let message_str = serialize_message(*actor_message);
-                let message_bytes = message_str.as_bytes();
-                // println!("  writing message to {} streams...", self.connections.len());
-                for connection in self.connections.values_mut() {
-                    connection
-                        .0
-                        .write(message_bytes)
-                        .map_err(|e| println!("{}", e));
-                    connection.0.flush().unwrap();
-                }
-                // println!("  done writing");
-            }
-            Message::ConnectToMaster(master_addr) => {
-                println!("TcpListenActor received ConnectToMaster");
-                self.master_addr = Some(master_addr);
-
-                let config = self.config.as_ref().expect("unwrapping config");
-                match TcpStream::connect(config.master.clone()) {
-                    Ok(stream) => {
-                        let connection = TcpConnection(stream);
-                        let own_addr = ctx.own_address.clone();
-                        let conn_id = self.get_new_connection_id();
-                        self.connections.insert(conn_id, connection.clone());
-                        handle_connection(connection, own_addr, conn_id);
-                    }
-                    Err(e) => {
-                        println!("Failed to connect: {}", e);
-                    }
-                };
-            }
-            Message::Config(config) =>{
-                self.config = Some(config);
-            }
-            Message::StreamDisconnected(connection_id) => {
-                self.connections.remove(&connection_id);
-            }
-            _ => println!("TcpListenActor received unknown message"),
-        }
-    }
-    fn start(&mut self, context: Context<Message>) {
-        println!("init TcpListenActor");
-
-        self.context = Some(context);
-    }
 }
 
 pub fn handle_messages<T, Q>(
