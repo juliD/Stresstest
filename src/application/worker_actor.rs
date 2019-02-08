@@ -4,11 +4,13 @@ use actor_model::context::*;
 
 use crate::application::message::Message;
 
+use std::ops::Drop;
+
 pub struct WorkerActor {
     pub id: u32,
     pub context: Option<Context<Message>>,
     pub target: String,
-    pub status: bool,
+    pub stopped: bool,
 }
 impl WorkerActor {
     fn request(&self) -> Result<(), Box<std::error::Error>> {
@@ -19,12 +21,18 @@ impl WorkerActor {
     }
 }
 
+impl Drop for WorkerActor {
+    fn drop(&mut self) {
+        println!("WorkerActor dropped");
+    }
+}
+
 impl Actor<Message> for WorkerActor {
     fn handle(&mut self, message: Message, _origin_address: Option<Address<Message>>) {
         match message {
             Message::Start => {
-                if self.status {
-                    self.status = false;
+                if self.stopped {
+                    self.stopped = false;
                     return;
                 }
                 let ctx = self.context.as_ref().expect("unwrapping context");
@@ -39,10 +47,11 @@ impl Actor<Message> for WorkerActor {
             }
             Message::SetTarget(target) => {
                 self.target = target;
+                println!("new target set: {}", self.target);
             }
             Message::Stop => {
                 println!("WorkerActor stopped");
-                self.status = true;
+                self.stopped = true;
             }
             _ => println!("WorkerActor received unknown message"),
         }

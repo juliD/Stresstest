@@ -8,16 +8,16 @@ use actor_model::actor::*;
 use actor_model::address::*;
 use actor_model::context::*;
 
+use crate::application::config_actor::AppConfig;
 use crate::application::message::Message;
 use crate::application::message_serialization::*;
 use crate::application::tcp_connection::TcpConnection;
-use crate::application::config_actor::AppConfig;
 
-use std::net::{SocketAddr};
 use bufstream::*;
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::io::Write;
+use std::net::SocketAddr;
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::thread;
 
@@ -53,9 +53,13 @@ impl TcpListenActor {
 
         let port = self.port;
         let own_addr = ctx.own_address.clone();
-        let master = self.config.as_ref().expect("unwrapping config").master.clone();
-        thread::spawn(move || {        
-
+        let master = self
+            .config
+            .as_ref()
+            .expect("unwrapping config")
+            .master
+            .clone();
+        thread::spawn(move || {
             let addr = format!("{}", master);
             let listener = TcpListener::bind(addr).unwrap();
             // accept connections and process them, spawning a new thread for each one
@@ -166,7 +170,7 @@ impl Actor<Message> for TcpListenActor {
                     }
                 };
             }
-            Message::Config(config) =>{
+            Message::Config(config) => {
                 self.config = Some(config);
             }
             Message::StreamDisconnected(connection_id) => {

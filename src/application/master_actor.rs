@@ -10,6 +10,8 @@ use crate::application::message::Message;
 use crate::application::worker_actor::WorkerActor;
 use crate::application::config_actor::AppConfig;
 
+// TODO: put children into vector
+
 pub struct MasterActor {
     pub workers: LinkedList<Address<Message>>,
     pub tcp_actor_addr: Address<Message>,
@@ -40,6 +42,7 @@ impl MasterActor {
     }
 
     fn send_tcp_message(&self,message: Message) {
+        // TODO: can we remove the box?
         self.tcp_actor_addr
             .send(Message::SendTcpMessage(Box::new(message)), None);
     }
@@ -103,22 +106,11 @@ impl Actor<Message> for MasterActor {
             Message::Log => {
                 println!("Requests sent: {}", self.counter);
             }
-            Message::SetTarget(target_address_raw) => {
-                println!("Address: {}",target_address_raw);
-                if !self.master {
-                    // TODO: Use String in target method
-                    let target_address_is_valid = verify_target_address(&target_address_raw);
-                    if target_address_is_valid {
-                        println!("valid target {}", target_address_raw);
-                        broadcast_children(
-                            ctx,
-                            &self.workers,
-                            self.child_id_counter,
-                            Message::SetTarget(target_address_raw),
-                        );
-                    } else {
-                        println!("invalid target address (please enter <IP>:<port>)");
-                    }
+            Message::SetTarget(target_address) => {
+                if self.master {
+                    self.send_tcp_message(Message::SetTarget(target_address));
+                } else {
+                    broadcast_children(ctx, &self.workers, self.child_id_counter, Message::SetTarget(target_address));
                 }
             }
             
@@ -129,6 +121,7 @@ impl Actor<Message> for MasterActor {
                 println!(
                     "target [target address]   specify the target which should be stress tested"
                 );
+                println!("target                    set target URL of stress test");
                 println!("start                     start stress test");
                 println!("stop                      stop stress test");
                 println!("log                       get current results");
@@ -174,7 +167,7 @@ impl Actor<Message> for MasterActor {
                     id: self.child_id_counter,
                     context: None,
                     target: "http://httpbin.org/ip".to_owned(),
-                    status: false,
+                    stopped: false,
                 });
                 self.workers.push_back(child_addr.clone());
             }

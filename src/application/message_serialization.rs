@@ -2,8 +2,10 @@ use crate::application::address_parsing::*;
 use crate::application::input_processing::*;
 use crate::application::message::Message;
 
+const DEFAULT_HTTP_PORT: u64 = 80;
+
 pub fn parse_message(message: &str) -> Option<Message> {
-    let (input_part_1, input_part_2) = parse_user_input(message);
+    let (input_part_1, input_part_2, input_part_3) = parse_user_input(message);
     match input_part_1 {
         Some("start") => Some(Message::Start),
         Some("stop") => Some(Message::Stop),
@@ -30,13 +32,12 @@ pub fn parse_message(message: &str) -> Option<Message> {
             // TODO: prettify
             match input_part_2 {
                 Some(address_raw) => {
-                    if verify_target_address(address_raw) {
-                        Some(Message::SetTarget(String::from(address_raw)))
-                    } else {
-                        // TODO: better error handling
-                        println!("invalid target address: {}", message);
-                        None
+                    let url_valid = verify_url(address_raw);
+                    if !url_valid {
+                        println!("invalid URL");
+                        return None;
                     }
+                    Some(Message::SetTarget(address_raw.to_owned()))
                 }
                 None => {
                     println!("could not parse target message: {}", message);
@@ -57,6 +58,7 @@ pub fn serialize_message(message: Message) -> String {
         Message::Stop => "stop".to_owned(),
         Message::Log => "log".to_owned(),
         Message::Help => "help".to_owned(),
+        Message::SetTarget(address) => format!("target {}", address), 
         Message::ReportRequests(count) => format!("reportrequests {}", count),
         _ => panic!("failed to serialize actor message"),
     };
