@@ -23,8 +23,7 @@ pub enum Message {
     StreamDisconnected(u32),
     // InputActor
     StartWatchInput(Address<Message>),
-    //ConfigActor
+    // ConfigActor
     StartWatchingConfig(Address<Message>),
     Config(AppConfig),
-
 }
