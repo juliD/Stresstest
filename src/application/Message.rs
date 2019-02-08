@@ -1,6 +1,7 @@
 extern crate actor_model;
 
 use crate::application::tcp_connection::TcpConnection;
+use crate::application::config_actor::AppConfig;
 use actor_model::address::*;
 
 #[derive(Clone)]
@@ -22,4 +23,8 @@ pub enum Message {
     StreamDisconnected(u32),
     // InputActor
     StartWatchInput(Address<Message>),
+    //ConfigActor
+    StartWatchingConfig(Address<Message>),
+    Config(AppConfig),
+
 }
