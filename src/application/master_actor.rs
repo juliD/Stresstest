@@ -11,11 +11,10 @@ use crate::application::worker_actor::WorkerActor;
 // TODO: put children into vector
 
 pub struct MasterActor {
-    pub workers: LinkedList<Address<Message>>,
+    pub workers: Vec<Address<Message>>,
     pub tcp_actor_addr: Address<Message>,
     pub input_actor_addr: Option<Address<Message>>,
     pub config_actor_addr: Address<Message>,
-    pub child_id_counter: u32,
     pub context: Option<Context<Message>>,
     pub master: bool,
     pub counter: u64,
@@ -28,8 +27,7 @@ impl MasterActor {
         config_actor_addr: Address<Message>,
     ) -> MasterActor {
         MasterActor {
-            workers: LinkedList::new(),
-            child_id_counter: 0,
+            workers: Vec::new(),
             context: None,
             master: is_master,
             counter: 0,
@@ -39,28 +37,15 @@ impl MasterActor {
         }
     }
 
-    fn send_tcp_message(&self,message: Message) {
+    fn send_tcp_message(&self, message: Message) {
         // TODO: can we remove the box?
         self.tcp_actor_addr
             .send(Message::SendTcpMessage(Box::new(message)), None);
     }
-}
 
-fn broadcast_children(
-    ctx: &Context<Message>,
-    list: &LinkedList<Address<Message>>,
-    count: u32,
-    message: Message,
-) {
-    let mut iter = list.iter();
-    iter.next();
-
-    for _ in 0..count - 1 {
-        match iter.next() {
-            Some(c) => {
-                ctx.send(&c, message.clone());
-            }
-            _ => {}
+    fn broadcast_children(&self, ctx: &Context<Message>, message: Message) {
+        for child in &self.workers {
+            ctx.send(&child, message.clone());
         }
     }
 }
@@ -70,16 +55,15 @@ impl Actor<Message> for MasterActor {
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
 
         match message {
-            Message::ReportRequests(count) => {                
+            Message::ReportRequests(count) => {
                 if self.master {
                     self.counter += count;
                 } else {
                     self.counter += count;
-                    if self.counter>=50{                                              
+                    if self.counter >= 50 {
                         self.send_tcp_message(Message::ReportRequests(self.counter));
-                        self.counter = 0; 
+                        self.counter = 0;
                     }
-                    
                 }
             }
             Message::Start => {
@@ -88,7 +72,7 @@ impl Actor<Message> for MasterActor {
                     self.send_tcp_message(Message::Start);
                 } else {
                     println!("MasterActor starting");
-                    broadcast_children(ctx, &self.workers, self.child_id_counter, Message::Start);
+                    self.broadcast_children(ctx, Message::Start);
                 }
             }
             Message::Stop => {
@@ -96,22 +80,25 @@ impl Actor<Message> for MasterActor {
                     self.send_tcp_message(Message::Stop);
                 } else {
                     println!("MasterActor stopped");
-                    broadcast_children(ctx, &self.workers, self.child_id_counter, Message::Stop);
+                    self.broadcast_children(ctx, Message::Stop);
                     self.send_tcp_message(Message::ReportRequests(self.counter));
                     self.counter = 0;
                 }
-            }            
+            }
             Message::Log => {
                 println!("Requests sent: {}", self.counter);
             }
             Message::SetTarget(target_address) => {
                 if self.master {
+                    // TODO: test whether URL is valid
+                    
+
                     self.send_tcp_message(Message::SetTarget(target_address));
                 } else {
-                    broadcast_children(ctx, &self.workers, self.child_id_counter, Message::SetTarget(target_address));
+                    self.broadcast_children(ctx, Message::SetTarget(target_address));
                 }
             }
-            
+
             Message::Help => {
                 println!(
                     "--------------------------------------------------------------------------"
@@ -135,42 +122,41 @@ impl Actor<Message> for MasterActor {
         println!("init MasterActor");
         self.context = Some(context);
 
-
         let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
         //get Config
         ctx.send(
             &self.config_actor_addr,
             Message::StartWatchingConfig(ctx.own_address.clone()),
         );
-        
+
         if self.master {
             match self.input_actor_addr.as_ref() {
                 Some(addr) => ctx.send(&addr, Message::StartWatchInput(ctx.own_address.clone())),
                 None => println!("MasterActor has no InputActor"),
             }
-            
+
             // start listening for worker connections
             ctx.send(
                 &self.tcp_actor_addr,
                 Message::StartListenForTcp(ctx.own_address.clone()),
             );
-
         } else {
             //create as many actors as cores available
             let num = num_cpus::get();
             for _ in 0..num {
-                self.child_id_counter += 1;
                 let ctx: &Context<Message> = self.context.as_ref().expect("unwrapping context");
                 let child_addr = ctx.register_actor(WorkerActor {
-                    id: self.child_id_counter,
                     context: None,
                     target: "http://httpbin.org/ip".to_owned(),
                     stopped: false,
                 });
-                self.workers.push_back(child_addr.clone());
+                self.workers.push(child_addr.clone());
             }
             // connect to master
-            ctx.send(&self.tcp_actor_addr, Message::ConnectToMaster(ctx.own_address.clone()));
+            ctx.send(
+                &self.tcp_actor_addr,
+                Message::ConnectToMaster(ctx.own_address.clone()),
+            );
         }
     }
 }

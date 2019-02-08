@@ -7,7 +7,6 @@ use crate::application::message::Message;
 use std::ops::Drop;
 
 pub struct WorkerActor {
-    pub id: u32,
     pub context: Option<Context<Message>>,
     pub target: String,
     pub stopped: bool,
@@ -15,7 +14,6 @@ pub struct WorkerActor {
 impl WorkerActor {
     fn request(&self) -> Result<(), Box<std::error::Error>> {
         let res = reqwest::get(&self.target)?;
-        //println!("Status = {}", res.status());
 
         Ok(())
     }
