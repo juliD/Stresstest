@@ -6,6 +6,8 @@ use actor_model::address::*;
 
 #[derive(Clone)]
 pub enum Message {
+    // general
+    Kill,
     // MasterActor
     Log,
     ReportRequests(u64),

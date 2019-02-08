@@ -91,9 +91,16 @@ impl Actor<Message> for MasterActor {
             Message::SetTarget(target_address) => {
                 if self.master {
                     // TODO: test whether URL is valid
-                    
-
-                    self.send_tcp_message(Message::SetTarget(target_address));
+                    let res = reqwest::get(&target_address);
+                    match res {
+                        Ok(_) => {
+                            self.send_tcp_message(Message::SetTarget(target_address));
+                        },
+                        Err(_) => {
+                            println!("the target address you entered cannot be reached")
+                        }
+                    }
+                    println!("SetTarget master");
                 } else {
                     self.broadcast_children(ctx, Message::SetTarget(target_address));
                 }
@@ -128,6 +135,14 @@ impl Actor<Message> for MasterActor {
             &self.config_actor_addr,
             Message::StartWatchingConfig(ctx.own_address.clone()),
         );
+
+
+        let test_addr = ctx.register_actor(WorkerActor {
+            context: None,
+            target: "http://httpbin.org/ip".to_owned(),
+            stopped: false,
+        });
+        test_addr.send(Message::Kill, None);
 
         if self.master {
             match self.input_actor_addr.as_ref() {

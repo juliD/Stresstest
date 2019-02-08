@@ -12,6 +12,7 @@ pub struct WorkerActor {
     pub stopped: bool,
 }
 impl WorkerActor {
+    // TODO: prettify
     fn request(&self) -> Result<(), Box<std::error::Error>> {
         let res = reqwest::get(&self.target)?;
 
@@ -33,15 +34,19 @@ impl Actor<Message> for WorkerActor {
                     self.stopped = false;
                     return;
                 }
-                let ctx = self.context.as_ref().expect("unwrapping context");
-                let paddr = ctx
-                    .parent_address
-                    .as_ref()
-                    .expect("unwrapping parent address");
+                match self.context {
+                    Some(ref ctx) => {
+                        let paddr = ctx
+                            .parent_address
+                            .as_ref()
+                            .expect("unwrapping parent address");
 
-                self.request().map_err(|e| println!("{}", e));
-                ctx.send(&paddr, Message::ReportRequests(1));
-                ctx.send(&ctx.own_address, Message::Start);
+                        self.request().map_err(|e| println!("{}", e));
+                        ctx.send(&paddr, Message::ReportRequests(1));
+                        ctx.send(&ctx.own_address, Message::Start);
+                    }
+                    None => println!("no context available in WorkerActor")
+                }
             }
             Message::SetTarget(target) => {
                 self.target = target;
@@ -50,6 +55,9 @@ impl Actor<Message> for WorkerActor {
             Message::Stop => {
                 println!("WorkerActor stopped");
                 self.stopped = true;
+            }
+            Message::Kill => {
+                self.context = None;
             }
             _ => println!("WorkerActor received unknown message"),
         }
