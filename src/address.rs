@@ -18,7 +18,7 @@ where
 {
     /// Sends a message to the mailbox of the actor with this address.
     pub fn send(&self, message: M, origin_address: Option<Address<M>>) {
-        let result = self.sender.clone().send(Envelope {
+        let result = self.sender.send(Envelope {
             message: message,
             origin_address: origin_address,
         });

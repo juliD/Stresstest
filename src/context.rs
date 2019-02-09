@@ -3,7 +3,7 @@ use crate::actor_system::*;
 use crate::address::*;
 
 /// The `Context` is individual to each `Actor` and contains it's own and it's parent's `Address`.
-/// Also, it provides convinience functions to register a child actor and send messages.
+/// Also, it provides convenience functions to register a child actor and send messages.
 /// The type parameter represents the message type allowed in this `ActorSystem`.
 pub struct Context<M>
 where

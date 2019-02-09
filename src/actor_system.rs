@@ -28,13 +28,12 @@ impl ActorSystem {
         f();
         println!("{}", SYSTEM_STARTUP_FINISHED_MESSAGE);
         loop {
-            // TODO: better solution to keep main thread alive?
             thread::sleep(Duration::from_millis(1000));
         }
     }
 
     /// Registering an `Actor` is necessary to integrate it into the `ActorSystem`.
-    /// By registering, it's handle method will be run in a seperate thread on each incoming message.
+    /// By registering, it's handle method will be run in a separate thread on each incoming message.
     /// It is also the only way to generate an `Address`, to send messages to the actor later on.
     /// 
     /// # Arguments
