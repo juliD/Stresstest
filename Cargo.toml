@@ -1,14 +1,7 @@
 [package]
 name = "actor_model"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Leon Busse <leon.busse@br.de>"]
 edition = "2018"
 
 [dependencies]
-num_cpus = "*"
-reqwest = "*"
-byteorder = "1.3.1"
-config = "*"
-notify = "*"
-lazy_static = "*"
-bufstream = "*"
