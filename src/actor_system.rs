@@ -8,9 +8,6 @@ use crate::context::*;
 use crate::message::Envelope;
 use crate::thread_utils::ThreadUtils;
 
-const SYSTEM_STARTING_MESSAGE: &str = "setting up system";
-const SYSTEM_STARTUP_FINISHED_MESSAGE: &str = "setup done";
-
 pub struct ActorSystem {}
 
 impl ActorSystem {
@@ -24,9 +21,7 @@ impl ActorSystem {
     where
         F: FnOnce() + 'static + Send,
     {
-        println!("{}", SYSTEM_STARTING_MESSAGE);
         f();
-        println!("{}", SYSTEM_STARTUP_FINISHED_MESSAGE);
         loop {
             thread::sleep(Duration::from_millis(1000));
         }
